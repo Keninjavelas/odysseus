@@ -1411,7 +1411,11 @@ import { wireArrowUpRecall, getLastUserMessageFromChatHistory } from './composer
       let isThinking = false;
       let thinkingStartTime = null;
       // Streaming TTS: synthesize sentence-by-sentence during streaming
-      const streamingTTS = !!(window.aiTTSManager && window.aiTTSManager.autoPlay && window.aiTTSManager.available);
+      let streamingTTS = !!(
+        window.aiTTSManager &&
+        window.aiTTSManager.autoPlay &&
+        window.aiTTSManager.available
+      );
       if (streamingTTS) window.aiTTSManager.streamingStart();
       // Multi-bubble agent tracking
       let roundHolder = holder;       // Current AI text bubble (changes per round)
