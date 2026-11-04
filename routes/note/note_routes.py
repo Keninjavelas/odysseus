@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from core.database import SessionLocal, Note
+from core.database import SessionLocal, Note, Project, Session
 from core.middleware import INTERNAL_TOOL_USER
 from src.auth_helpers import require_user
 from src.constants import DATA_DIR
@@ -34,6 +34,7 @@ class NoteCreate(BaseModel):
     due_date: Optional[str] = None
     source: str = "user"
     session_id: Optional[str] = None
+    project_id: Optional[str] = None
     image_url: Optional[str] = None
     gallery_id: Optional[str] = None
     repeat: Optional[str] = "none"
@@ -78,6 +79,7 @@ def _note_to_dict(note: Note) -> Dict[str, Any]:
     return {
         "id": note.id,
         "owner": note.owner,
+        "project_id": getattr(note, "project_id", None),
         "title": note.title,
         "content": note.content,
         "items": items,
@@ -628,6 +630,7 @@ def setup_note_routes(task_scheduler=None, upload_handler=None):
         request: Request,
         archived: Optional[bool] = None,
         label: Optional[str] = None,
+        project_id: Optional[str] = None,
     ):
         user = _owner(request)
         db = SessionLocal()
@@ -635,6 +638,15 @@ def setup_note_routes(task_scheduler=None, upload_handler=None):
             q = db.query(Note)
             if user is not None:
                 q = q.filter(Note.owner == user)
+            if project_id is not None:
+                if project_id:
+                    project = db.query(Project).filter(Project.id == project_id,
+                                                       Project.owner == user).first()
+                    if project is None:
+                        raise HTTPException(404, "Project not found")
+                    q = q.filter(Note.project_id == project_id)
+                else:
+                    q = q.filter(Note.project_id == None)  # noqa: E711
             if archived is not None:
                 q = q.filter(Note.archived == archived)
             else:
@@ -663,9 +675,21 @@ def setup_note_routes(task_scheduler=None, upload_handler=None):
         )
         db = SessionLocal()
         try:
+            project_id = body.project_id or None
+            if project_id and db.query(Project).filter(
+                Project.id == project_id, Project.owner == user).first() is None:
+                raise HTTPException(404, "Project not found")
+            if body.session_id:
+                session = db.query(Session).filter(
+                    Session.id == body.session_id, Session.owner == user).first()
+                if session and session.project_id:
+                    if project_id and project_id != session.project_id:
+                        raise HTTPException(422, "Project does not match the session")
+                    project_id = session.project_id
             note = Note(
                 id=str(uuid.uuid4()),
                 owner=user,
+                project_id=project_id,
                 title=body.title,
                 content=body.content,
                 items=json.dumps(body.items) if body.items is not None else None,

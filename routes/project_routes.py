@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from core.database import Project, Session, SessionLocal
+from core.database import Note, Project, Session, SessionLocal
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 
 
@@ -18,12 +18,13 @@ class ProjectInput(BaseModel):
     description: str = Field(default="", max_length=2000)
 
 
-def _payload(project, session_count=0):
+def _payload(project, session_count=0, note_count=0):
     return {
         "id": project.id,
         "name": project.name,
         "description": project.description or "",
         "session_count": session_count,
+        "note_count": note_count,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }
@@ -44,7 +45,8 @@ def list_projects(request: Request):
         projects = (db.query(Project).filter(Project.owner == owner)
                     .order_by(Project.updated_at.desc()).all())
         return [_payload(project, db.query(Session).filter(
-            Session.owner == owner, Session.project_id == project.id).count())
+            Session.owner == owner, Session.project_id == project.id).count(),
+            db.query(Note).filter(Note.owner == owner, Note.project_id == project.id).count())
             for project in projects]
     finally:
         db.close()
@@ -94,6 +96,8 @@ def delete_project(request: Request, project_id: str):
         # Deleting a container keeps its conversations; they become unassigned.
         db.query(Session).filter(Session.owner == owner, Session.project_id == project_id).update(
             {Session.project_id: None}, synchronize_session=False)
+        db.query(Note).filter(Note.owner == owner, Note.project_id == project_id).update(
+            {Note.project_id: None}, synchronize_session=False)
         db.delete(project)
         db.commit()
         return {"deleted": project_id}
@@ -131,5 +135,38 @@ def unassign_session(request: Request, project_id: str, session_id: str):
         session.project_id = None
         db.commit()
         return {"session_id": session_id, "project_id": None}
+    finally:
+        db.close()
+
+
+@router.put("/{project_id}/notes/{note_id}")
+def assign_note(request: Request, project_id: str, note_id: str):
+    owner = effective_user(request)
+    db = SessionLocal()
+    try:
+        _owned_project(db, project_id, owner)
+        note = db.query(Note).filter(Note.id == note_id, Note.owner == owner).first()
+        if note is None:
+            raise HTTPException(404, "Note not found")
+        note.project_id = project_id
+        db.commit()
+        return {"note_id": note_id, "project_id": project_id}
+    finally:
+        db.close()
+
+
+@router.delete("/{project_id}/notes/{note_id}")
+def unassign_note(request: Request, project_id: str, note_id: str):
+    owner = effective_user(request)
+    db = SessionLocal()
+    try:
+        _owned_project(db, project_id, owner)
+        note = db.query(Note).filter(Note.id == note_id, Note.owner == owner,
+                                     Note.project_id == project_id).first()
+        if note is None:
+            raise HTTPException(404, "Note not found in project")
+        note.project_id = None
+        db.commit()
+        return {"note_id": note_id, "project_id": None}
     finally:
         db.close()

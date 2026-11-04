@@ -7,14 +7,14 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from core.database import Base, Project, Session
+from core.database import Base, Note, Project, Session
 from routes import project_routes
 
 
 @pytest.fixture
 def project_db(monkeypatch):
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[Project.__table__, Session.__table__])
+    Base.metadata.create_all(engine, tables=[Project.__table__, Session.__table__, Note.__table__])
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(project_routes, "SessionLocal", factory)
     monkeypatch.setattr(project_routes, "effective_user", lambda request: request.owner)
@@ -29,6 +29,8 @@ def test_project_membership_is_owner_scoped(project_db):
     with project_db() as db:
         db.add(Session(id="alice-chat", name="Edit", endpoint_url="", model="", owner="alice"))
         db.add(Session(id="bob-chat", name="Other", endpoint_url="", model="", owner="bob"))
+        db.add(Note(id="alice-note", owner="alice", title="Notes", note_type="note"))
+        db.add(Note(id="bob-note", owner="bob", title="Private", note_type="note"))
         db.commit()
 
     with pytest.raises(HTTPException) as denied:
@@ -40,6 +42,9 @@ def test_project_membership_is_owner_scoped(project_db):
 
     assigned = project_routes.assign_session(alice, created["id"], "alice-chat")
     assert assigned["project_id"] == created["id"]
+    assert project_routes.assign_note(alice, created["id"], "alice-note")["project_id"] == created["id"]
+    with pytest.raises(HTTPException):
+        project_routes.assign_note(alice, created["id"], "bob-note")
     assert project_routes.list_projects(alice)[0]["session_count"] == 1
     assert project_routes.list_projects(bob) == []
 
@@ -47,3 +52,5 @@ def test_project_membership_is_owner_scoped(project_db):
     with project_db() as db:
         assert db.get(Session, "alice-chat").project_id is None
         assert db.get(Session, "bob-chat").project_id is None
+        assert db.get(Note, "alice-note").project_id is None
+        assert db.get(Note, "bob-note").project_id is None

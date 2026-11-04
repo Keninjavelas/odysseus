@@ -19,7 +19,9 @@ product experience described later in the roadmap is complete.
   task can be accepted into an owner-owned checklist or rejected; duplicate
   proposals and duplicate checklist items are detected.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
-  `/api/sessions?project_id=<id>` lists a project's conversations.
+  `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
+  also be assigned to a project; the Notes agent tool reads and writes within
+  the current chat's project.
 - `/api/evals/cases` saves evaluation prompts and tool/response expectations.
   Submit canonical traces to `/api/evals/cases/<id>/grade`, then compare two
   stored runs via `/api/evals/compare/<left>/<right>`.
@@ -33,9 +35,10 @@ product experience described later in the roadmap is complete.
 
 ## Next implementation gates
 
-1. **Project context isolation.** Add project IDs to notes, documents, memory,
-   research, and media records, and require project filters in agent retrieval.
-   The current project API organizes chats; it does not isolate those resources.
+1. **Complete project context isolation.** Add project IDs to documents,
+   memory, research, and media records, and require project filters in agent
+   retrieval. Chats and Notes now have project assignments; the other
+   resource families remain owner-scoped but shared across a user's projects.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.

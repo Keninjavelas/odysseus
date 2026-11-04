@@ -29,13 +29,15 @@
   }));
 
   async function loadProjects() {
+    const notesResult = await api('/api/notes');
     [state.projects, state.sessions] = await Promise.all([api('/api/projects'), api('/api/sessions')]);
+    const assignableNotes = (notesResult.notes || []).filter((note) => !note.project_id || state.projects.some((project) => project.id === note.project_id));
     const list = $('project-list'); list.replaceChildren();
     if (!state.projects.length) list.append(node('p', 'No projects yet.'));
     for (const project of state.projects) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', project.name), node('p', project.description || 'No description'),
-                  node('small', `${project.session_count} conversations`));
+                  node('small', `${project.session_count} conversations · ${project.note_count} notes`));
       const actions = node('div', undefined, 'card-actions');
       const select = node('select');
       select.append(node('option', 'Choose a conversation'));
@@ -57,6 +59,20 @@
         await loadProjects();
       }));
       actions.append(select, assign, remove); card.append(actions); list.append(card);
+      const noteActions = node('div', undefined, 'card-actions');
+      const noteSelect = node('select');
+      noteSelect.append(node('option', 'Choose a note')); noteSelect.firstChild.value = '';
+      assignableNotes.filter((note) => !note.project_id || note.project_id === project.id).forEach((note) => {
+        const option = node('option', `${note.title || 'Untitled'}${note.project_id ? ' · assigned' : ''}`);
+        option.value = note.id; noteSelect.append(option);
+      });
+      const assignNote = node('button', 'Assign note');
+      assignNote.addEventListener('click', () => run(async () => {
+        if (!noteSelect.value) throw new Error('Choose a note first.');
+        await api(`/api/projects/${project.id}/notes/${noteSelect.value}`, { method: 'PUT' });
+        await loadProjects();
+      }));
+      noteActions.append(noteSelect, assignNote); card.append(noteActions);
     }
   }
   $('project-form').addEventListener('submit', (event) => {

@@ -2346,7 +2346,7 @@ async def _execute_tool_block_impl(
             or {"error": f"{tool}: execution failed", "exit_code": 1}
     elif tool == "manage_notes":
         desc = "manage_notes"
-        result = await dispatched(do_manage_notes(content, owner=owner))
+        result = await dispatched(do_manage_notes(content, owner=owner, session_id=session_id))
     elif tool == "manage_calendar":
         desc = "manage_calendar"
         result = await dispatched(do_manage_calendar(content, owner=owner))

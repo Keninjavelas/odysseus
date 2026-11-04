@@ -30,7 +30,8 @@ def _search_tokens(value: str) -> list[str]:
     return tokens
 
 
-async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
+async def do_manage_notes(content: str, owner: Optional[str] = None,
+                          session_id: Optional[str] = None) -> Dict:
     """Handle manage_notes tool calls: CRUD on notes and checklists."""
     import uuid as _uuid
     from core.database import SessionLocal, Note
@@ -82,6 +83,16 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
     if bound is not None:
         bound.validate()
     db = SessionLocal()
+    scope_active = bool(session_id)
+    scope_project_id = None
+    if scope_active:
+        from core.database import Session
+        session = db.query(Session).filter(Session.id == session_id,
+                                           Session.owner == owner).first()
+        if session is None:
+            db.close()
+            return {"error": "Session not found", "exit_code": 1}
+        scope_project_id = session.project_id
 
     def _norm_note_title(value: str) -> str:
         text = (value or "").strip().lower()
@@ -93,8 +104,11 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
         # authenticated owner must match exactly; null/empty legacy rows are not
         # shared between accounts.
         if not owner_value:
-            return True
-        return getattr(note, "owner", None) == owner_value
+            owner_match = True
+        else:
+            owner_match = getattr(note, "owner", None) == owner_value
+        return owner_match and (not scope_active or
+                                getattr(note, "project_id", None) == scope_project_id)
 
     def _is_calendar_reminder_note(note) -> bool:
         return getattr(note, "source", None) == "calendar" and getattr(note, "label", None) == "calendar"
@@ -105,6 +119,8 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
         q = db.query(Note).filter(Note.id == note_id if bound is not None else Note.id.startswith(note_id))
         if owner:
             q = q.filter(Note.owner == owner)
+        if scope_active:
+            q = q.filter(Note.project_id == scope_project_id)
         return q.first()
 
     def _note_id_arg() -> str:
@@ -150,6 +166,8 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
         q = db.query(Note).filter(Note.archived == False)  # noqa: E712
         if owner is not None:
             q = q.filter(Note.owner == owner)
+        if scope_active:
+            q = q.filter(Note.project_id == scope_project_id)
         target_title = _norm_note_title(title)
         target_content = _norm_note_text(content_value)
         target_items = _norm_note_items(items_value)
@@ -206,6 +224,8 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             q = db.query(Note)
             if owner is not None:
                 q = q.filter(Note.owner == owner)
+            if scope_active:
+                q = q.filter(Note.project_id == scope_project_id)
             label_filter = str(args.get("label") or "").strip()
             if label_filter and label_filter.lower() != "default":
                 q = q.filter(Note.label == label_filter)
@@ -369,6 +389,8 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                 )
                 if owner is not None:
                     existing_q = existing_q.filter(Note.owner == owner)
+                if scope_active:
+                    existing_q = existing_q.filter(Note.project_id == scope_project_id)
                 target_title = _norm_note_title(title)
                 for existing in existing_q.limit(25).all():
                     if _norm_note_title(existing.title or "") == target_title:
@@ -412,6 +434,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             note = Note(
                 id=str(_uuid.uuid4()),
                 owner=owner,
+                project_id=scope_project_id if scope_active else None,
                 title=title,
                 content=content_raw,
                 items=items_json,
@@ -453,6 +476,8 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                     q = db.query(Note)
                     if owner:
                         q = q.filter(Note.owner == owner)
+                    if scope_active:
+                        q = q.filter(Note.project_id == scope_project_id)
                     candidates = [
                         n for n in q.filter(Note.archived == False).all()
                         if _norm_note_title(n.title) == _norm_note_title(title_query)
@@ -527,6 +552,8 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
                     q = db.query(Note)
                     if owner:
                         q = q.filter(Note.owner == owner)
+                    if scope_active:
+                        q = q.filter(Note.project_id == scope_project_id)
                     candidates = [
                         n for n in q.filter(Note.archived == False).all()
                         if _norm_note_title(n.title) == _norm_note_title(title_query)

@@ -1947,6 +1947,19 @@ def _migrate_add_session_project_id_column():
         index.create(bind=connection, checkfirst=True)
 
 
+def _migrate_add_note_project_id_column():
+    """Add project assignment to existing notes on SQLite and Postgres."""
+    with engine.begin() as connection:
+        schema = inspect(connection)
+        if not schema.has_table("notes"):
+            return
+        columns = {column["name"] for column in schema.get_columns("notes")}
+        if "project_id" not in columns:
+            connection.execute(text("ALTER TABLE notes ADD COLUMN project_id VARCHAR"))
+        index = next(index for index in Note.__table__.indexes if index.name == "ix_notes_project_id")
+        index.create(bind=connection, checkfirst=True)
+
+
 def _migrate_add_token_columns():
     """Add cumulative token tracking columns to sessions table."""
     import sqlite3
@@ -2522,6 +2535,7 @@ class Note(TimestampMixin, Base):
 
     id         = Column(String, primary_key=True, index=True)
     owner      = Column(String, nullable=True, index=True)
+    project_id = Column(String, nullable=True, index=True)
     title      = Column(String, default="")
     content    = Column(Text, nullable=True)
     items      = Column(Text, nullable=True)       # JSON string of [{text, done}]
@@ -2870,6 +2884,7 @@ def init_db():
     _migrate_add_session_cwd_column()
     _migrate_add_session_endpoint_id_column()
     _migrate_add_session_project_id_column()
+    _migrate_add_note_project_id_column()
     _migrate_add_token_columns()
     _migrate_add_total_cost_usd()
     _migrate_add_mode_column()
