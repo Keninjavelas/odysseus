@@ -237,3 +237,12 @@ def get_preview(request: Request, episode_id: str):
     if not destination.is_file():
         raise HTTPException(404, "Preview not found")
     return FileResponse(destination, media_type="video/mp4")
+
+
+@router.get("/episodes/{episode_id}/captions.srt")
+def get_captions(request: Request, episode_id: str):
+    destination = _episode_dir(effective_user(request), episode_id) / "captions.srt"
+    if not destination.is_file():
+        raise HTTPException(404, "Captions not found")
+    return FileResponse(destination, media_type="application/x-subrip",
+                        filename=f"{episode_id}.srt")

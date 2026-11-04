@@ -22,6 +22,9 @@ def test_storyboard_produces_editable_aligned_tracks(tmp_path):
     assert all(clip["placeholder"] for clip in timeline["tracks"]["narration"])
     saved = save_timeline(timeline, tmp_path)
     assert json.loads(saved.read_text(encoding="utf-8")) == timeline
+    captions = (tmp_path / "captions.srt").read_text(encoding="utf-8")
+    assert "00:00:00,000 --> 00:00:03,000" in captions
+    assert "00:00:03,000 --> 00:00:06,000" in captions
 
 
 def test_storyboard_preview_renders_without_gpu(tmp_path):
@@ -31,6 +34,12 @@ def test_storyboard_preview_renders_without_gpu(tmp_path):
     preview = render_preview(timeline, tmp_path)
     assert preview.is_file()
     assert preview.stat().st_size > 1000
+    if shutil.which("ffprobe"):
+        probe = subprocess.run([shutil.which("ffprobe"), "-v", "error", "-show_entries",
+                                "stream=codec_type", "-of", "json", str(preview)],
+                               capture_output=True, text=True, check=True)
+        types = {stream["codec_type"] for stream in json.loads(probe.stdout)["streams"]}
+        assert {"video", "audio", "subtitle"} <= types
 
 
 def test_storyboard_rejects_empty_or_unbounded_outline():
@@ -76,6 +85,7 @@ def test_episode_api_keeps_each_owners_timeline_private(tmp_path, monkeypatch):
             action="set_shot", shot_id="shot-001", duration=8))
     assert edited["timeline"]["duration"] == 8
     assert studio_routes.get_timeline(alice, episode_id).path.name == "timeline.json"
+    assert studio_routes.get_captions(alice, episode_id).path.name == "captions.srt"
     with pytest.raises(HTTPException) as denied:
         studio_routes.get_timeline(bob, episode_id)
     assert denied.value.status_code == 404

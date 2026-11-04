@@ -31,7 +31,8 @@ product experience described later in the roadmap is complete.
   text, duration, and order, split or delete shots with ripple timing, then
   regenerate the MP4 preview. Local PNG, JPEG, and WebP stills can be attached
   to shots, and local narration audio can be attached to the corresponding
-  audio lane and mixed into the preview.
+  audio lane and mixed into the preview. The caption lane exports as SRT and
+  is embedded as a selectable subtitle track in the MP4.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
@@ -52,7 +53,7 @@ product experience described later in the roadmap is complete.
    currently accepts manual proposals and records their source references.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, local image/TTS providers, generated voiceover,
-   subtitles, and background FFmpeg jobs. The current preview uses placeholders
+   multilingual subtitle generation, and background FFmpeg jobs. The current preview uses placeholders
    where a shot has no attached still.
 6. **NLE editing.** Expand basic split/delete ripple edits with clip trim,
    multiple video and audio

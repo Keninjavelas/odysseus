@@ -184,6 +184,7 @@
     $('episode-title').textContent = timeline.title;
     $('episode-meta').textContent = `${timeline.tracks.video.length} shots · ${timeline.duration} seconds · ${timeline.render_mode}`;
     $('timeline-download').href = `/api/studio/episodes/${timeline.episode_id}/timeline`;
+    $('captions-download').href = `/api/studio/episodes/${timeline.episode_id}/captions.srt`;
     const video = $('episode-video'); video.hidden = !previewUrl;
     if (previewUrl) video.src = `${previewUrl}?v=${Date.now()}`; else video.removeAttribute('src');
     const list = $('shot-list'); list.replaceChildren();

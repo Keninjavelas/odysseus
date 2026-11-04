@@ -54,6 +54,30 @@ def save_timeline(timeline: dict, directory: Path) -> Path:
     temporary = directory / "timeline.json.tmp"
     temporary.write_text(json.dumps(timeline, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(destination)
+    write_subtitles(timeline, directory)
+    return destination
+
+
+def _srt_time(seconds: float) -> str:
+    millis = round(float(seconds) * 1000)
+    hours, millis = divmod(millis, 3_600_000)
+    minutes, millis = divmod(millis, 60_000)
+    whole, millis = divmod(millis, 1000)
+    return f"{hours:02d}:{minutes:02d}:{whole:02d},{millis:03d}"
+
+
+def write_subtitles(timeline: dict, directory: Path) -> Path:
+    """Export the caption lane as an editable UTF-8 SRT sidecar."""
+    entries = []
+    for clip in timeline["tracks"]["captions"]:
+        caption = str(clip.get("text") or "").strip()
+        if not caption:
+            continue
+        start = float(clip["start"])
+        end = start + float(clip["duration"])
+        entries.append(f"{len(entries) + 1}\n{_srt_time(start)} --> {_srt_time(end)}\n{caption}\n")
+    destination = directory / "captions.srt"
+    destination.write_text("\n".join(entries), encoding="utf-8")
     return destination
 
 
@@ -185,6 +209,7 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
         lines.extend((f"file {frame_name}", f"duration {clip['duration']}"))
     lines.append(f"file shot-{len(clips):03d}.png")
     concat_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    captions_file = write_subtitles(timeline, directory)
     audio_concat = directory / "audio.ffconcat"
     audio_lines = ["ffconcat version 1.0"]
     audio_segments = []
@@ -222,9 +247,15 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
                "-f", "concat", "-safe", "0", "-i", str(concat_file),
                "-f", "concat", "-safe", "0", "-i", str(audio_concat),
-               "-vf", "fps=12,format=yuv420p", "-t", str(timeline["duration"]),
-               "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
-               "-b:a", "96k", "-movflags", "+faststart", str(output)]
+               ]
+    if captions_file.stat().st_size:
+        command.extend(["-i", str(captions_file)])
+    command.extend(["-map", "0:v:0", "-map", "1:a:0"])
+    if captions_file.stat().st_size:
+        command.extend(["-map", "2:s:0", "-c:s", "mov_text", "-metadata:s:s:0", "language=eng"])
+    command.extend(["-vf", "fps=12,format=yuv420p", "-t", str(timeline["duration"]),
+                    "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
+                    "-b:a", "96k", "-movflags", "+faststart", str(output)])
     try:
         subprocess.run(command, cwd=directory, check=True, capture_output=True,
                        text=True, timeout=180)
