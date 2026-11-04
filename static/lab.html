@@ -94,11 +94,20 @@
         <label class="check"><input type="checkbox" name="render_preview" checked> Render MP4 preview</label>
         <button>Create episode</button>
       </form>
+      <h3>Start from timed captions</h3>
+      <p>Import a UTF-8 SRT transcript to create shot cards with the original cue timecodes. Pauses become editable shots.</p>
+      <form id="srt-form" class="stack-form">
+        <label>Episode title <input name="title" required maxlength="160"></label>
+        <label>SRT transcript <input name="transcript" type="file" accept=".srt,text/plain" required></label>
+        <label class="check"><input type="checkbox" name="render"> Render MP4 preview now</label>
+        <button>Import transcript</button>
+      </form>
       <h3>Saved episodes</h3>
       <div id="episode-list" class="cards"></div>
       <div id="episode-result" class="subpanel" hidden>
         <h3 id="episode-title"></h3>
         <p id="episode-meta"></p>
+        <button id="render-episode" type="button">Render MP4 preview</button>
         <video id="episode-video" controls hidden></video>
         <p><a id="timeline-download" download="timeline.json">Download editable timeline JSON</a></p>
         <p><a id="captions-download" download="captions.srt">Download caption SRT</a></p>

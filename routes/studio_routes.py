@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from services.studio.compiler import compile_storyboard, edit_storyboard, render_preview, save_timeline
+from services.studio.compiler import compile_storyboard, compile_subtitles, edit_storyboard, render_preview, save_timeline
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 from src.runtime_paths import get_default_data_dir
 
@@ -46,6 +46,10 @@ class NarrationSynthesis(BaseModel):
     expected_revision: int | None = None
 
 
+class RenderRequest(BaseModel):
+    expected_revision: int | None = None
+
+
 def _owner_dir(owner: str | None) -> Path:
     digest = hashlib.sha256(str(owner or "single-user").encode("utf-8")).hexdigest()[:24]
     return Path(get_default_data_dir()) / "studio" / digest
@@ -67,6 +71,31 @@ def create_episode(request: Request, payload: EpisodeInput):
     save_timeline(timeline, directory)
     preview_url = None
     if payload.render_preview:
+        try:
+            render_preview(timeline, directory)
+        except RuntimeError as error:
+            raise HTTPException(503, str(error)) from error
+        preview_url = f"/api/studio/episodes/{timeline['episode_id']}/preview"
+    return {"timeline": timeline, "preview_url": preview_url}
+
+
+@router.post("/episodes/from-srt", status_code=201)
+def create_episode_from_srt(request: Request, title: str = Form(...),
+                            transcript: UploadFile = File(...),
+                            render: bool = Form(False)):
+    raw = transcript.file.read(1_000_001)
+    if len(raw) > 1_000_000:
+        raise HTTPException(413, "SRT exceeds 1 MB")
+    try:
+        timeline = compile_subtitles(title, raw.decode("utf-8-sig"))
+    except UnicodeDecodeError as error:
+        raise HTTPException(422, "SRT must be UTF-8") from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    directory = _episode_dir(effective_user(request), timeline["episode_id"])
+    save_timeline(timeline, directory)
+    preview_url = None
+    if render:
         try:
             render_preview(timeline, directory)
         except RuntimeError as error:
@@ -107,6 +136,22 @@ def get_timeline(request: Request, episode_id: str):
     if not destination.is_file():
         raise HTTPException(404, "Episode not found")
     return FileResponse(destination, media_type="application/json")
+
+
+@router.post("/episodes/{episode_id}/render")
+def render_episode(request: Request, episode_id: str, payload: RenderRequest):
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if payload.expected_revision is not None and payload.expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before rendering")
+    try:
+        render_preview(timeline, directory)
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    return {"timeline": timeline, "preview_url": f"/api/studio/episodes/{episode_id}/preview"}
 
 
 @router.patch("/episodes/{episode_id}/timeline")

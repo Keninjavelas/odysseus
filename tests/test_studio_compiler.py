@@ -10,7 +10,7 @@ import pytest
 from fastapi import HTTPException, UploadFile
 from types import SimpleNamespace
 
-from services.studio.compiler import compile_storyboard, edit_storyboard, render_preview, save_timeline
+from services.studio.compiler import compile_storyboard, compile_subtitles, edit_storyboard, render_preview, save_timeline
 from routes import studio_routes
 
 
@@ -47,6 +47,41 @@ def test_storyboard_rejects_empty_or_unbounded_outline():
         compile_storyboard("Ocean", "")
     with pytest.raises(ValueError):
         compile_storyboard("Ocean", "\n".join("beat" for _ in range(25)))
+
+
+def test_srt_import_preserves_source_timecodes_and_pauses(tmp_path, monkeypatch):
+    srt = ("1\n00:00:01,000 --> 00:00:02,500\nFirst sentence\n\n"
+           "2\n00:00:03,000 --> 00:00:05,000\nSecond sentence\n")
+    timeline = compile_subtitles("Interview", srt)
+    assert timeline["render_mode"] == "transcript_rough_cut"
+    assert [shot["duration"] for shot in timeline["tracks"]["video"]] == [1, 1.5, 0.5, 2]
+    assert timeline["tracks"]["video"][1]["source_start"] == 1
+    assert timeline["tracks"]["video"][1]["source_end"] == 2.5
+    assert timeline["tracks"]["captions"][0]["text"] == ""
+    assert timeline["duration"] == 5
+    save_timeline(timeline, tmp_path)
+    exported = (tmp_path / "captions.srt").read_text(encoding="utf-8")
+    assert "00:00:01,000 --> 00:00:02,500" in exported
+    assert "00:00:03,000 --> 00:00:05,000" in exported
+    edit_storyboard(timeline, {"action": "split_shot", "shot_id": "shot-002", "at_seconds": 1})
+    assert timeline["tracks"]["video"][1]["source_end"] == 2
+    assert timeline["tracks"]["video"][2]["source_start"] == 2
+    with pytest.raises(ValueError, match="overlap"):
+        compile_subtitles("Interview", srt + "\n3\n00:00:04,000 --> 00:00:05,000\nOverlap\n")
+
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    alice = SimpleNamespace(owner="alice")
+    created = studio_routes.create_episode_from_srt(
+        alice, "Interview", UploadFile(file=io.BytesIO(srt.encode()), filename="interview.srt"), False)
+    episode_id = created["timeline"]["episode_id"]
+    assert created["preview_url"] is None
+    assert studio_routes.get_timeline(alice, episode_id).path.is_file()
+    if shutil.which("ffmpeg"):
+        rendered = studio_routes.render_episode(
+            alice, episode_id, studio_routes.RenderRequest(expected_revision=1))
+        assert studio_routes.get_preview(alice, episode_id).path.is_file()
+        assert rendered["timeline"]["revision"] == 1
 
 
 def test_storyboard_edit_keeps_three_lanes_aligned():

@@ -40,7 +40,10 @@ product experience described later in the roadmap is complete.
   is embedded as a selectable subtitle track in the MP4. Timeline edits use
   revision checks so a stale browser tab receives a conflict instead of
   overwriting a newer edit. The saved episode list lets users reopen timelines
-  after a page refresh.
+  after a page refresh. A UTF-8 SRT transcript can also create a silent rough
+  cut with cue source timecodes and editable pause shots; preview rendering can
+  be requested separately. This import currently accepts up to 60 shots and
+  five minutes, and it does not ingest the original interview video.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
@@ -74,8 +77,9 @@ product experience described later in the roadmap is complete.
 
 ### Premiere-style editing and Understanding Studio
 
-- **Transcript-first rough cut:** import interview audio, transcribe locally,
-  select sentences, and create a cut with corresponding source timecodes.
+- **Transcript-first rough cut:** the timed SRT-to-storyboard import is built.
+  Next, ingest interview audio/video, transcribe locally, and select sentences
+  to cut the original media with corresponding source timecodes.
 - **Evidence-aware documentary:** each narration claim points to its source
   document and time range; unsupported claims are flagged before rendering.
 - **Screen recording to tutorial:** detect cursor actions and pauses, assemble

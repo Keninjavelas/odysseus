@@ -266,7 +266,7 @@
       const title = node('input'); title.value = shot.title; title.setAttribute('aria-label', 'Shot title');
       const prompt = node('textarea'); prompt.value = shot.visual_prompt; prompt.rows = 3; prompt.setAttribute('aria-label', 'Visual prompt');
       const narration = node('textarea'); narration.value = timeline.tracks.narration[index].text; narration.rows = 3; narration.setAttribute('aria-label', 'Narration');
-      const duration = node('input'); duration.type = 'number'; duration.min = '1'; duration.max = '30'; duration.value = shot.duration; duration.setAttribute('aria-label', 'Duration in seconds');
+      const duration = node('input'); duration.type = 'number'; duration.min = '0.1'; duration.max = '30'; duration.step = '0.1'; duration.value = shot.duration; duration.setAttribute('aria-label', 'Duration in seconds');
       card.append(title, prompt, narration, duration);
       const actions = node('div', undefined, 'card-actions');
       const fileInput = node('input'); fileInput.type = 'file'; fileInput.accept = 'image/png,image/jpeg,image/webp';
@@ -320,12 +320,12 @@
         showEpisode(result.timeline, result.preview_url);
       }));
       actions.append(save);
-      if (shot.duration >= 2) {
+      if (shot.duration >= 0.2) {
         const split = node('button', 'Split in half');
         split.addEventListener('click', () => run(async () => {
           const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {
             action: 'split_shot', shot_id: shot.id,
-            at_seconds: Math.max(1, Math.floor(shot.duration / 2)), render_preview: true,
+            at_seconds: Number((shot.duration / 2).toFixed(3)), render_preview: true,
             expected_revision: timeline.revision,
           }));
           showEpisode(result.timeline, result.preview_url);
@@ -389,6 +389,24 @@
       await loadEpisodes();
     });
   });
+  $('srt-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    run(async () => {
+      const form = new FormData(formElement);
+      const result = await api('/api/studio/episodes/from-srt', { method: 'POST', body: form });
+      showEpisode(result.timeline, result.preview_url);
+      await loadEpisodes();
+    });
+  });
+  $('render-episode').addEventListener('click', () => run(async () => {
+    if (!state.episode) throw new Error('Open an episode first.');
+    const timeline = state.episode;
+    const result = await api(`/api/studio/episodes/${timeline.episode_id}/render`,
+                             jsonOptions('POST', { expected_revision: timeline.revision }));
+    showEpisode(result.timeline, result.preview_url);
+    await loadEpisodes();
+  }));
 
   Promise.all([loadProjects(), loadActions(), loadCases(), loadEpisodes()]).catch((error) => notice(error.message || 'Could not load lab.'));
 })();

@@ -49,6 +49,72 @@ def compile_storyboard(title: str, outline: str, *, episode_id: str | None = Non
     }
 
 
+def compile_subtitles(title: str, srt: str, *, episode_id: str | None = None) -> dict:
+    """Build a silent rough cut from SRT cues, retaining source timecodes."""
+    title = str(title or "").strip()
+    if not title or len(title) > 160:
+        raise ValueError("title must contain 1-160 characters")
+    blocks = re.split(r"\n\s*\n", str(srt or "").lstrip("\ufeff").replace("\r\n", "\n").strip())
+    if not blocks or len(blocks) > 60:
+        raise ValueError("SRT must contain 1-60 cues")
+    clock = re.compile(r"^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})$")
+
+    def seconds(value: str) -> float:
+        match = clock.fullmatch(value.strip())
+        if not match:
+            raise ValueError("invalid SRT timecode")
+        hour, minute, second, millis = map(int, match.groups())
+        if minute >= 60 or second >= 60:
+            raise ValueError("invalid SRT timecode")
+        return hour * 3600 + minute * 60 + second + millis / 1000
+
+    video, narration, captions = [], [], []
+    cursor = 0.0
+
+    def append_shot(duration: float, text: str, source_start: float | None = None,
+                    source_end: float | None = None) -> None:
+        nonlocal cursor
+        if len(video) >= 60:
+            raise ValueError("SRT rough cut exceeds 60 shots including pauses")
+        clip_id = f"shot-{len(video) + 1:03d}"
+        common = {"id": clip_id, "start": round(cursor, 3), "duration": round(duration, 3)}
+        label = text.splitlines()[0][:100] if text else "Pause"
+        video.append({**common, "title": label, "visual_prompt": text or "Silence / B-roll",
+                      "media_path": None, "motion": "static", "placeholder": True,
+                      "source_start": source_start, "source_end": source_end})
+        narration.append({**common, "text": text, "audio_path": None, "audio_offset": 0.0,
+                          "placeholder": True, "source_start": source_start,
+                          "source_end": source_end})
+        captions.append({**common, "text": text})
+        cursor = round(cursor + duration, 3)
+
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if lines and lines[0].isdigit():
+            lines.pop(0)
+        if len(lines) < 2 or "-->" not in lines[0]:
+            raise ValueError("invalid SRT cue")
+        start_text, end_text = (part.strip() for part in lines[0].split("-->", 1))
+        start, end = seconds(start_text), seconds(end_text)
+        cue_text = "\n".join(lines[1:])
+        if not cue_text or len(cue_text) > 1000 or not 0.1 <= end - start <= 30:
+            raise ValueError("SRT cue needs text and a duration of 0.1-30 seconds")
+        if start < cursor - 0.001:
+            raise ValueError("SRT cues must be in order and must not overlap")
+        gap = round(start - cursor, 3)
+        while gap > 0:
+            piece = min(30.0, gap)
+            append_shot(piece, "")
+            gap = round(gap - piece, 3)
+        append_shot(round(end - start, 3), cue_text, start, end)
+    if cursor > 300:
+        raise ValueError("SRT rough cut must be at most five minutes")
+    return {"schema_version": "1.0", "revision": 1,
+            "episode_id": episode_id or str(uuid.uuid4()), "title": title,
+            "duration": cursor, "render_mode": "transcript_rough_cut",
+            "tracks": {"video": video, "narration": narration, "captions": captions}}
+
+
 def save_timeline(timeline: dict, directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / "timeline.json"
@@ -107,8 +173,8 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
             captions[index]["text"] = operation["narration_text"].strip()
         if "duration" in operation:
             duration = operation["duration"]
-            if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not 1 <= duration <= 30:
-                raise ValueError("duration must be between 1 and 30 seconds")
+            if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not 0.1 <= duration <= 30:
+                raise ValueError("duration must be between 0.1 and 30 seconds")
             for track in (video, narration, captions):
                 track[index]["duration"] = float(duration)
     elif kind == "split_shot":
@@ -117,8 +183,8 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
         at_seconds = operation.get("at_seconds")
         duration = float(video[index]["duration"])
         if (isinstance(at_seconds, bool) or not isinstance(at_seconds, (int, float))
-                or not 1 <= at_seconds <= duration - 1):
-            raise ValueError("at_seconds must leave at least one second on each side")
+                or not 0.1 <= at_seconds <= round(duration - 0.1, 3)):
+            raise ValueError("at_seconds must leave at least 0.1 second on each side")
         new_id = f"{shot_id}-part-{uuid.uuid4().hex[:8]}"
         for track in (video, narration, captions):
             original = track[index]
@@ -126,6 +192,11 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
             latter["id"] = new_id
             latter["duration"] = duration - float(at_seconds)
             original["duration"] = float(at_seconds)
+            if original.get("source_start") is not None and original.get("source_end") is not None:
+                cut = min(float(original["source_end"]),
+                          float(original["source_start"]) + float(at_seconds))
+                latter["source_start"] = cut
+                original["source_end"] = cut
             track.insert(index + 1, latter)
         # A duplicated transcript would appear twice in the export; the new
         # segment is deliberately empty until the editor writes its voiceover.
