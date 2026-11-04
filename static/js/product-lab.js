@@ -214,6 +214,24 @@
         showEpisode(result.timeline, result.preview_url);
       }));
       actions.append(fileInput, upload);
+      const voice = timeline.tracks.narration[index];
+      if (voice.audio_path) {
+        const player = node('audio'); player.controls = true;
+        player.src = `/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/narration`;
+        card.append(player);
+      }
+      const audioInput = node('input'); audioInput.type = 'file';
+      audioInput.accept = '.wav,.mp3,.m4a,.ogg,.flac';
+      audioInput.setAttribute('aria-label', `Narration audio for shot ${index + 1}`);
+      const uploadAudio = node('button', 'Use narration audio');
+      uploadAudio.addEventListener('click', () => run(async () => {
+        if (!audioInput.files.length) throw new Error('Choose an audio file first.');
+        const body = new FormData(); body.append('audio', audioInput.files[0]);
+        const result = await api(`/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/narration`,
+                                 { method: 'POST', body });
+        showEpisode(result.timeline, result.preview_url);
+      }));
+      actions.append(audioInput, uploadAudio);
       const save = node('button', 'Save shot');
       save.addEventListener('click', () => run(async () => {
         const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {

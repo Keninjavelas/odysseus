@@ -1,6 +1,10 @@
 import json
 import shutil
 import io
+import math
+import struct
+import subprocess
+import wave
 
 import pytest
 from fastapi import HTTPException, UploadFile
@@ -99,4 +103,35 @@ def test_still_upload_renders_real_image_and_keeps_owner_boundary(tmp_path, monk
     assert studio_routes.get_shot_still(alice, episode_id, "shot-001").path.is_file()
     with pytest.raises(HTTPException) as denied:
         studio_routes.get_shot_still(bob, episode_id, "shot-001")
+    assert denied.value.status_code == 404
+
+
+def test_narration_upload_mixes_audio_into_preview(tmp_path, monkeypatch):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("FFmpeg not installed")
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    created = studio_routes.create_episode(
+        alice, studio_routes.EpisodeInput(title="Ocean", outline="First beat", render_preview=False))
+    episode_id = created["timeline"]["episode_id"]
+    source = io.BytesIO()
+    with wave.open(source, "wb") as wav:
+        wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(16000)
+        wav.writeframes(b"".join(struct.pack("<h", int(9000 * math.sin(2 * math.pi * 440 * t / 16000)))
+                                 for t in range(4000)))
+    source.seek(0)
+    result = studio_routes.upload_shot_narration(
+        alice, episode_id, "shot-001", UploadFile(file=source, filename="voice.wav"))
+    assert result["timeline"]["tracks"]["narration"][0]["placeholder"] is False
+    preview = studio_routes.get_preview(alice, episode_id).path
+    assert preview.stat().st_size > 1000
+    decoded = subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error",
+                              "-i", str(preview), "-vn", "-t", "0.2", "-ac", "1", "-ar", "16000",
+                              "-f", "s16le", "-"], capture_output=True, check=True).stdout
+    assert any(sample[0] != 0 for sample in struct.iter_unpack("<h", decoded))
+    assert studio_routes.get_shot_narration(alice, episode_id, "shot-001").path.is_file()
+    with pytest.raises(HTTPException) as denied:
+        studio_routes.get_shot_narration(bob, episode_id, "shot-001")
     assert denied.value.status_code == 404

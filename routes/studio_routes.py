@@ -4,6 +4,8 @@ import hashlib
 import io
 import json
 import re
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -156,6 +158,77 @@ def get_shot_still(request: Request, episode_id: str, shot_id: str):
     if not image_path.is_file():
         raise HTTPException(404, "Still not found")
     return FileResponse(image_path, media_type="image/jpeg")
+
+
+@router.post("/episodes/{episode_id}/shots/{shot_id}/narration")
+def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
+                          audio: UploadFile = File(...)):
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    clip = next((item for item in timeline["tracks"]["narration"] if item["id"] == shot_id), None)
+    if clip is None:
+        raise HTTPException(404, "Shot not found")
+    extension = Path(audio.filename or "").suffix.lower()
+    if extension not in {".wav", ".mp3", ".m4a", ".ogg", ".flac"}:
+        raise HTTPException(422, "Narration must be WAV, MP3, M4A, OGG, or FLAC")
+    raw = audio.file.read(25_000_001)
+    if len(raw) > 25_000_000:
+        raise HTTPException(413, "Narration exceeds 25 MB")
+    audio_dir = directory / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    filename = uuid.uuid4().hex + extension
+    source = audio_dir / filename
+    source.write_bytes(raw)
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        source.unlink(missing_ok=True)
+        raise HTTPException(503, "FFmpeg is required for narration")
+    try:
+        check = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(source),
+                                "-vn", "-t", "0.1", "-f", "null", "-"],
+                               capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired as error:
+        source.unlink(missing_ok=True)
+        raise HTTPException(422, "Narration decode timed out") from error
+    if check.returncode != 0:
+        source.unlink(missing_ok=True)
+        raise HTTPException(422, "Invalid narration audio")
+    clip["audio_path"] = f"audio/{filename}"
+    clip["audio_offset"] = 0.0
+    clip["placeholder"] = False
+    try:
+        render_preview(timeline, directory, ffmpeg=ffmpeg)
+    except RuntimeError as error:
+        source.unlink(missing_ok=True)
+        raise HTTPException(503, str(error)) from error
+    save_timeline(timeline, directory)
+    return {"timeline": timeline,
+            "preview_url": f"/api/studio/episodes/{episode_id}/preview",
+            "audio_url": f"/api/studio/episodes/{episode_id}/shots/{shot_id}/narration"}
+
+
+@router.get("/episodes/{episode_id}/shots/{shot_id}/narration")
+def get_shot_narration(request: Request, episode_id: str, shot_id: str):
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    clip = next((item for item in timeline["tracks"]["narration"] if item["id"] == shot_id), None)
+    if not clip or not clip.get("audio_path"):
+        raise HTTPException(404, "Narration not found")
+    relative = Path(clip["audio_path"])
+    if relative.is_absolute() or ".." in relative.parts:
+        raise HTTPException(404, "Narration not found")
+    audio_path = directory / relative
+    if not audio_path.is_file():
+        raise HTTPException(404, "Narration not found")
+    media_types = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4a": "audio/mp4",
+                   ".ogg": "audio/ogg", ".flac": "audio/flac"}
+    return FileResponse(audio_path, media_type=media_types.get(audio_path.suffix, "application/octet-stream"))
 
 
 @router.get("/episodes/{episode_id}/preview")

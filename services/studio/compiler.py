@@ -34,7 +34,7 @@ def compile_storyboard(title: str, outline: str, *, episode_id: str | None = Non
         common = {"id": clip_id, "start": cursor, "duration": duration}
         video.append({**common, "title": beat[:100], "visual_prompt": beat,
                       "media_path": None, "motion": "static", "placeholder": True})
-        narration.append({**common, "text": beat, "audio_path": None,
+        narration.append({**common, "text": beat, "audio_path": None, "audio_offset": 0.0,
                           "placeholder": True})
         captions.append({**common, "text": beat})
         cursor += duration
@@ -105,6 +105,7 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
         # A duplicated transcript would appear twice in the export; the new
         # segment is deliberately empty until the editor writes its voiceover.
         narration[index + 1]["text"] = ""
+        narration[index + 1]["audio_offset"] = float(narration[index].get("audio_offset") or 0) + float(at_seconds)
         captions[index + 1]["text"] = ""
     elif kind == "delete_shot":
         if len(video) == 1:
@@ -163,7 +164,7 @@ def _draw_card(title: str, beat: str, destination: Path, number: int,
 
 
 def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None) -> Path:
-    """Render placeholder shot cards with silent audio; requires no GPU."""
+    """Render shot cards or stills with per-shot narration; requires no GPU."""
     ffmpeg = ffmpeg or shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("FFmpeg is required for storyboard preview rendering")
@@ -184,10 +185,43 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
         lines.extend((f"file {frame_name}", f"duration {clip['duration']}"))
     lines.append(f"file shot-{len(clips):03d}.png")
     concat_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    audio_concat = directory / "audio.ffconcat"
+    audio_lines = ["ffconcat version 1.0"]
+    audio_segments = []
+    try:
+        for index, clip in enumerate(timeline["tracks"]["narration"], start=1):
+            segment = directory / f"audio-segment-{index:03d}.wav"
+            audio_segments.append(segment)
+            duration = str(clip["duration"])
+            if clip.get("audio_path"):
+                relative = Path(clip["audio_path"])
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise RuntimeError("Narration path is invalid")
+                source = directory / relative
+                if not source.is_file():
+                    raise RuntimeError(f"Shot {index} narration is missing")
+                offset = float(clip.get("audio_offset") or 0)
+                audio_command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                                 "-ss", str(offset), "-i", str(source), "-vn", "-af",
+                                 f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS",
+                                 "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", str(segment)]
+            else:
+                audio_command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                                 "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+                                 "-t", duration, "-c:a", "pcm_s16le", str(segment)]
+            subprocess.run(audio_command, cwd=directory, check=True, capture_output=True,
+                           text=True, timeout=60)
+            audio_lines.append(f"file {segment.name}")
+        audio_concat.write_text("\n".join(audio_lines) + "\n", encoding="utf-8")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        for segment in audio_segments:
+            segment.unlink(missing_ok=True)
+        detail = getattr(error, "stderr", "") or str(error)
+        raise RuntimeError(f"FFmpeg narration failed: {detail[-600:]}") from error
     output = directory / "preview.mp4"
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
                "-f", "concat", "-safe", "0", "-i", str(concat_file),
-               "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+               "-f", "concat", "-safe", "0", "-i", str(audio_concat),
                "-vf", "fps=12,format=yuv420p", "-t", str(timeline["duration"]),
                "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
                "-b:a", "96k", "-movflags", "+faststart", str(output)]
@@ -198,4 +232,7 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
         output.unlink(missing_ok=True)
         detail = getattr(error, "stderr", "") or str(error)
         raise RuntimeError(f"FFmpeg preview failed: {detail[-600:]}") from error
+    finally:
+        for segment in audio_segments:
+            segment.unlink(missing_ok=True)
     return output

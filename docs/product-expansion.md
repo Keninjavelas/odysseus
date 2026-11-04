@@ -30,7 +30,8 @@ product experience described later in the roadmap is complete.
   and silent audio. `PATCH /api/studio/episodes/<id>/timeline` can edit shot
   text, duration, and order, split or delete shots with ripple timing, then
   regenerate the MP4 preview. Local PNG, JPEG, and WebP stills can be attached
-  to shots and are rendered into the same preview.
+  to shots, and local narration audio can be attached to the corresponding
+  audio lane and mixed into the preview.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
@@ -50,7 +51,7 @@ product experience described later in the roadmap is complete.
    pipelines to the review queue with verifiable source deep links. The queue
    currently accepts manual proposals and records their source references.
 5. **Studio production mode.** Add sourced outline research, schema-validated
-   shot expansion, continuity bible, local image/TTS providers, voiceover,
+   shot expansion, continuity bible, local image/TTS providers, generated voiceover,
    subtitles, and background FFmpeg jobs. The current preview uses placeholders
    where a shot has no attached still.
 6. **NLE editing.** Expand basic split/delete ripple edits with clip trim,

@@ -203,7 +203,7 @@ Remaining pro gap (polish, not a rebuild):
 ### 2. Documentary compiler (formerly "Understanding Studio") — dry-run foundation built
 The current `/lab` workflow turns explicit outline beats into an editable
 three-lane timeline and a GPU-free MP4 storyboard preview. Users can attach
-local stills to shots. It does not yet
+local stills and narration audio to shots. It does not yet
 research a topic or synthesize narration. Target production architecture:
 
 - **Screenplay / shot expansion** — LLM expands the outline into an ordered
