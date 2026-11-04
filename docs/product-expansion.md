@@ -24,7 +24,9 @@ product experience described later in the roadmap is complete.
   the current chat's project. Documents have project membership too: documents
   created in a project chat inherit it, existing documents can be assigned in
   Project Lab, and the document library accepts `project_id` to filter results
-  and language facets. Project deletion unassigns documents without deleting them.
+  and language facets. Document agent actions, their approval binding, and chat
+  document injection check the current chat's project. Project deletion unassigns
+  documents without deleting them.
 - `/api/evals/cases` saves evaluation prompts and tool/response expectations.
   Submit canonical traces to `/api/evals/cases/<id>/grade`, then compare two
   stored runs via `/api/evals/compare/<left>/<right>`. Project Lab can also
@@ -60,8 +62,9 @@ product experience described later in the roadmap is complete.
 
 1. **Complete project context isolation.** Add project IDs to memory, research,
    and media records, and require project filters in all agent retrieval.
-   Chats, Notes, and Documents now have project assignments, but the document
-   agent tools and other retrieval paths still need project filtering.
+   Chats, Notes, and Documents now have project assignments and their main agent
+   paths filter by project. Other document retrieval, memory, research, uploads,
+   and media paths still need a full isolation audit and project filters.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.

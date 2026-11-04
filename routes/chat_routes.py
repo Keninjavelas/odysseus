@@ -3208,13 +3208,22 @@ def setup_chat_routes(
         legacy_active_doc_fallback = not active_doc_state
         _doc_db = SessionLocal()
         try:
+            from sqlalchemy import false
+            _chat_project = _doc_db.query(DBSession).filter(DBSession.id == session).first()
+            if not _chat_project or (ctx.user and _chat_project.owner != ctx.user):
+                _doc_project_filter = false()
+            elif _chat_project.project_id:
+                _doc_project_filter = DBDocument.project_id == _chat_project.project_id
+            else:
+                _doc_project_filter = DBDocument.project_id.is_(None)
             if active_doc_id:
                 logger.info(f"[doc-inject] active_doc_id from frontend: {active_doc_id}")
                 # Scope to the caller's documents. The session and in-memory
                 # fallbacks below are already owner/session-bound; this
                 # explicit-id path looked up by id alone, so a user could
                 # inject another user's document by passing its id.
-                _doc_q = _doc_db.query(DBDocument).filter(DBDocument.id == active_doc_id)
+                _doc_q = _doc_db.query(DBDocument).filter(
+                    DBDocument.id == active_doc_id, _doc_project_filter)
                 active_doc = _owner_session_filter(_doc_q, ctx.user).first()
                 if active_doc:
                     doc_session = active_doc.session_id
@@ -3253,6 +3262,7 @@ def setup_chat_routes(
             if not active_doc and legacy_active_doc_fallback:
                 _email_doc_q = _doc_db.query(DBDocument).filter(
                     DBDocument.session_id == session,
+                    _doc_project_filter,
                     DBDocument.is_active == True,
                     DBDocument.language == "email",
                 )
@@ -3262,6 +3272,7 @@ def setup_chat_routes(
             if not active_doc and legacy_active_doc_fallback:
                 _session_doc_q = _doc_db.query(DBDocument).filter(
                     DBDocument.session_id == session,
+                    _doc_project_filter,
                     DBDocument.is_active == True
                 )
                 active_doc = _owner_session_filter(_session_doc_q, ctx.user).order_by(DBDocument.updated_at.desc()).first()
@@ -3278,7 +3289,8 @@ def setup_chat_routes(
                     from src.agent_tools.document_tools import get_active_document
                     _mem_id = get_active_document()
                     if _mem_id:
-                        _mem_q = _doc_db.query(DBDocument).filter(DBDocument.id == _mem_id)
+                        _mem_q = _doc_db.query(DBDocument).filter(
+                            DBDocument.id == _mem_id, _doc_project_filter)
                         cand = _owner_session_filter(_mem_q, ctx.user).first()
                         is_sft_fixture_user = str(ctx.user or "").startswith("sft_")
                         if (

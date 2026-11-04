@@ -54,12 +54,25 @@ def _record(namespace, owner, thread, row):
     return OwnedResource(namespace, owner, thread, namespace, row.id, _revision(row, namespace), linked)
 
 
-def _row(namespace, identifier, owner):
+def _document_project(db, owner, thread_id):
+    from core.database import Session
+
+    session = db.query(Session).filter(Session.id == thread_id, Session.owner == owner).first()
+    if session is None:
+        raise ResourceIdentityError("Document invocation chat is missing")
+    return session.project_id
+
+
+def _row(namespace, identifier, owner, thread_id=None):
     from core.database import SessionLocal, Document, Session, Note
     model = {"documents": Document, "threads": Session, "notes": Note}[namespace]
     db = SessionLocal()
     try:
-        row = db.query(model).filter(model.id == identifier, model.owner == owner).first()
+        query = db.query(model).filter(model.id == identifier, model.owner == owner)
+        if namespace == "documents" and thread_id is not None:
+            project_id = _document_project(db, owner, thread_id)
+            query = query.filter(Document.project_id == project_id) if project_id else query.filter(Document.project_id.is_(None))
+        row = query.first()
         if row is None or (namespace == "documents" and not row.is_active):
             raise ResourceIdentityError("Owned record is missing or inaccessible")
         db.expunge(row)
@@ -234,7 +247,8 @@ class BoundOwnedOperation:
                 if _memory_record(resource.record_id, self.owner, self.thread_id) != resource:
                     raise ResourceIdentityError("Memory identity changed")
             elif _record(resource.namespace, self.owner, self.thread_id,
-                         _row(resource.namespace, resource.record_id, self.owner)) != resource:
+                         _row(resource.namespace, resource.record_id, self.owner,
+                              self.thread_id if resource.namespace == "documents" else None)) != resource:
                 raise ResourceIdentityError("Owned record identity changed")
 
 
@@ -302,13 +316,16 @@ def resolve_owned_operation(operation, *, owner, thread_id, request_id="", docum
                 from core.database import SessionLocal, Document
                 db = SessionLocal()
                 try:
-                    row = db.query(Document).filter(Document.owner == owner, Document.is_active == True).order_by(Document.updated_at.desc(), Document.id).first()
+                    project_id = _document_project(db, owner, thread_id)
+                    query = db.query(Document).filter(Document.owner == owner, Document.is_active == True)
+                    query = query.filter(Document.project_id == project_id) if project_id else query.filter(Document.project_id.is_(None))
+                    row = query.order_by(Document.updated_at.desc(), Document.id).first()
                     identifier = row.id if row is not None else ""
                 finally:
                     db.close()
             if not identifier:
                 raise ResourceIdentityError("Document selector is unresolved")
-            row = _row(namespace, identifier, owner)
+            row = _row(namespace, identifier, owner, thread_id if namespace == "documents" else None)
             resources.append(_record(namespace, owner, thread_id, row))
             doc_id, doc_version = row.id, row.version_count
             from src.tool_approvals import document_content_digest

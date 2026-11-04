@@ -90,29 +90,54 @@ def clear_active_document(doc_id: Optional[str] = None) -> bool:
     return False
 
 
-def _owned_document_query(query, Document, owner: Optional[str]):
+_PROJECT_ALL = object()
+_PROJECT_DENY = object()
+
+
+def _project_scope_for_ctx(db, ctx: dict):
+    session_id = ctx.get("session_id")
+    if not session_id:
+        return _PROJECT_ALL
+    from src.database import Session as DbSession
+
+    session = db.query(DbSession).filter(DbSession.id == session_id).first()
+    owner = ctx.get("owner")
+    if session is None or (owner is not None and session.owner != owner):
+        return _PROJECT_DENY
+    return session.project_id
+
+
+def _owned_document_query(query, Document, owner: Optional[str], project_scope=_PROJECT_ALL):
     if owner is None:
         # A bare Python `False` is not a valid SQL expression — SQLAlchemy 1.4
         # deprecates it and 2.0 raises ArgumentError. Use the SQL `false()`
         # literal to return zero rows for an unscoped (owner-less) query.
         from sqlalchemy import false
         return query.filter(false())
-    return query.filter(Document.owner == owner)
+    query = query.filter(Document.owner == owner)
+    if project_scope is _PROJECT_DENY:
+        from sqlalchemy import false
+        return query.filter(false())
+    if project_scope is not _PROJECT_ALL:
+        return query.filter(Document.project_id == project_scope) if project_scope else query.filter(Document.project_id.is_(None))
+    return query
 
 
-def _get_owned_document(db, Document, doc_id: str, owner: Optional[str], active_only: bool = False):
+def _get_owned_document(db, Document, doc_id: str, owner: Optional[str],
+                        active_only: bool = False, project_scope=_PROJECT_ALL):
     q = db.query(Document).filter(Document.id == doc_id)
     if active_only:
         q = q.filter(Document.is_active == True)
-    q = _owned_document_query(q, Document, owner)
+    q = _owned_document_query(q, Document, owner, project_scope)
     return q.first()
 
 
-def _most_recent_owned_document(db, Document, owner: Optional[str], active_only: bool = False):
+def _most_recent_owned_document(db, Document, owner: Optional[str],
+                                active_only: bool = False, project_scope=_PROJECT_ALL):
     q = db.query(Document)
     if active_only:
         q = q.filter(Document.is_active == True)
-    q = _owned_document_query(q, Document, owner)
+    q = _owned_document_query(q, Document, owner, project_scope)
     return q.order_by(Document.updated_at.desc()).first()
 
 
@@ -638,9 +663,11 @@ class UpdateDocumentTool:
 
         db = SessionLocal()
         try:
+            project_scope = _project_scope_for_ctx(db, ctx)
             doc = None
             if target_id:
-                doc = _get_owned_document(db, Document, target_id, owner)
+                doc = _get_owned_document(db, Document, target_id, owner,
+                                          project_scope=project_scope)
             if (
                 not doc
                 and target_id
@@ -650,7 +677,8 @@ class UpdateDocumentTool:
             if not doc:
                 if target_id:
                     return {"error": "Requested document not found; no other document was changed", "exit_code": 1}
-                doc = _most_recent_owned_document(db, Document, owner)
+                doc = _most_recent_owned_document(db, Document, owner,
+                                                  project_scope=project_scope)
                 if doc:
                     target_id = doc.id
                     set_active_document(target_id)
@@ -800,9 +828,11 @@ class EditDocumentTool:
 
         db = SessionLocal()
         try:
+            project_scope = _project_scope_for_ctx(db, ctx)
             doc = None
             if target_id:
-                doc = _get_owned_document(db, Document, target_id, owner)
+                doc = _get_owned_document(db, Document, target_id, owner,
+                                          project_scope=project_scope)
             if (
                 not doc
                 and target_id
@@ -814,7 +844,8 @@ class EditDocumentTool:
                     return {"error": "Requested document not found; no other document was changed", "exit_code": 1}
                 # Fallback: most recently updated document. Avoids "no active doc" errors
                 # after server restart or when the agent loses track of which doc to edit.
-                doc = _most_recent_owned_document(db, Document, owner)
+                doc = _most_recent_owned_document(db, Document, owner,
+                                                  project_scope=project_scope)
                 if doc:
                     target_id = doc.id
                     set_active_document(target_id)
@@ -1005,7 +1036,9 @@ class SuggestDocumentTool:
 
         db = SessionLocal()
         try:
-            doc = _get_owned_document(db, Document, target_id, owner)
+            project_scope = _project_scope_for_ctx(db, ctx)
+            doc = _get_owned_document(db, Document, target_id, owner,
+                                      project_scope=project_scope)
             if not doc:
                 return {"error": f"Document {target_id} not found"}
 
@@ -1109,9 +1142,10 @@ class ManageDocumentTool:
             return ts.strftime('%Y-%m-%d')
 
         try:
+            project_scope = _project_scope_for_ctx(db, ctx)
             if action == "list":
                 q = db.query(Document).filter(Document.is_active == True)
-                q = _owned_document_query(q, Document, owner)
+                q = _owned_document_query(q, Document, owner, project_scope)
                 search_text = args.get("search")
                 if search_text:
                     # Tolerate unambiguous conversational framing in a title
@@ -1163,7 +1197,8 @@ class ManageDocumentTool:
                 doc_id = args.get("document_id") or args.get("id") or args.get("uid")
                 if not doc_id:
                     return {"error": "Need document_id (use action=list to find one)", "exit_code": 1}
-                doc = _get_owned_document(db, Document, doc_id, owner, active_only=True)
+                doc = _get_owned_document(db, Document, doc_id, owner, active_only=True,
+                                          project_scope=project_scope)
                 if not doc:
                     return {"error": f"Document '{doc_id}' not found", "exit_code": 1}
                 set_active_document(doc.id)
@@ -1211,12 +1246,14 @@ class ManageDocumentTool:
                 doc_id = args.get("document_id") or args.get("id") or args.get("uid") or ctx.get("doc_id") or _active_document_id
                 doc = None
                 if doc_id:
-                    doc = _get_owned_document(db, Document, doc_id, owner)
+                    doc = _get_owned_document(db, Document, doc_id, owner,
+                                              project_scope=project_scope)
                 if not doc:
                     if doc_id:
                         return {"error": "Requested document not found; no other document was deleted", "exit_code": 1}
                     # Fallback: most recently updated doc (likely what the user means)
-                    doc = _most_recent_owned_document(db, Document, owner, active_only=True)
+                    doc = _most_recent_owned_document(db, Document, owner, active_only=True,
+                                                      project_scope=project_scope)
                 if not doc:
                     return {"error": "No document to delete", "exit_code": 1}
                 version_error = _approved_document_version_error(doc, ctx)
@@ -1231,7 +1268,11 @@ class ManageDocumentTool:
 
             elif action == "tidy":
                 from src.document_actions import run_document_tidy
-                result = await run_document_tidy(owner or "")
+                if not owner or project_scope is _PROJECT_DENY:
+                    return {"error": "Document scope is unavailable", "exit_code": 1}
+                result = await run_document_tidy(
+                    owner, project_id=project_scope if project_scope is not _PROJECT_ALL else None,
+                    scope_project=project_scope is not _PROJECT_ALL)
                 return {"response": result, "exit_code": 0}
 
             else:

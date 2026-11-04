@@ -50,7 +50,7 @@ def _real_len(content: str) -> int:
     return len(stripped)
 
 
-async def run_document_tidy(owner: str) -> str:
+async def run_document_tidy(owner: str, *, project_id=None, scope_project: bool = False) -> str:
     """Remove clearly-junk documents and redundant duplicates for an owner.
 
     Conservative rules (no length-based deletion — short notes are valid):
@@ -69,9 +69,12 @@ async def run_document_tidy(owner: str) -> str:
             # Documents now carry their own owner column (robust to a deleted
             # session). Match on it directly; orphaned legacy rows are swept
             # to the admin at boot so they're attributed too.
-            docs = db.query(Document).filter(Document.owner == owner).all()
+            query = db.query(Document).filter(Document.owner == owner)
         else:
-            docs = db.query(Document).all()
+            query = db.query(Document)
+        if scope_project:
+            query = query.filter(Document.project_id == project_id) if project_id else query.filter(Document.project_id.is_(None))
+        docs = query.all()
 
         deleted_examples = []
         deleted = 0

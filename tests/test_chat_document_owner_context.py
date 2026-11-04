@@ -28,7 +28,7 @@ def document_chat(tmp_path, monkeypatch):
         # Preprocessing and external model I/O are outside the owner lookup.
         # The actual route, session-owner gate and document ORM queries run.
         return chat_helpers.ChatContext(
-            preface=[], rag_sources=[], web_sources=[], used_memories=[],
+            preface=[], rag_sources=[], rag_citations=[], web_sources=[], used_memories=[],
             messages=[{"role": "user", "content": "Summarize my writing"}],
             context_length=4096, was_compacted=False, user=effective_user(request), uprefs={},
             preset=chat_helpers.PresetInfo(0.2, 128, None, None),
@@ -117,3 +117,21 @@ def test_chat_document_context_is_owner_scoped(document_chat, source, document_o
         assert db.get(case.database.Document, "bob-doc").session_id == (
             "alice-chat" if source in {"session", "email-session"} and document_owner == "bob" else None
         )
+
+
+def test_chat_does_not_inject_document_from_another_project(document_chat):
+    case = document_chat
+    with case.factory() as db:
+        db.add(case.database.Project(id="film", owner="alice", name="Film"))
+        db.get(case.database.Session, "alice-chat").project_id = "film"
+        db.add(case.database.Document(id="general-doc", owner="alice", title="General",
+                                      current_content="other-project-secret", is_active=True))
+        db.commit()
+    response = case.client.post("/api/chat_stream", data={
+        "message": "Summarize this", "session": "alice-chat", "mode": "agent",
+        "compare_mode": "true", "no_memory": "true", "use_rag": "false",
+        "active_doc_id": "general-doc", "active_doc_state": "visible",
+    })
+    assert response.status_code == 200
+    assert case.captured == [None]
+    assert "other-project-secret" not in response.text
