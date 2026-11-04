@@ -771,6 +771,8 @@ from routes.studio_routes import router as studio_router
 app.include_router(studio_router)
 from routes.eval_routes import router as eval_router
 app.include_router(eval_router)
+from routes.action_routes import router as action_router
+app.include_router(action_router)
 
 # Admin Danger Zone wipes (Settings → System → Danger Zone)
 from routes.admin_wipe.admin_wipe_routes import setup_admin_wipe_routes

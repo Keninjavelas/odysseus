@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const state = { projects: [], sessions: [], cases: [], episode: null };
+  const state = { projects: [], sessions: [], cases: [], notes: [], episode: null };
   const notice = (message) => { $('status').textContent = message || ''; };
   const node = (tag, text, className) => {
     const element = document.createElement(tag);
@@ -66,6 +66,49 @@
       const form = new FormData(formElement);
       await api('/api/projects', jsonOptions('POST', { name: form.get('name'), description: form.get('description') }));
       formElement.reset(); await loadProjects();
+    });
+  });
+
+  async function loadActions() {
+    const [actions, notesResult] = await Promise.all([api('/api/actions'), api('/api/notes')]);
+    state.notes = (notesResult.notes || []).filter((note) => note.note_type === 'checklist' && !note.archived);
+    const list = $('action-list'); list.replaceChildren();
+    if (!actions.length) list.append(node('p', 'No pending proposals.'));
+    for (const item of actions) {
+      const card = node('article', undefined, 'card');
+      card.append(node('h3', item.title),
+                  node('small', `${item.source_kind}${item.source_ref ? ` · ${item.source_ref}` : ''}`));
+      if (item.source_excerpt) card.append(node('p', item.source_excerpt));
+      const actionsRow = node('div', undefined, 'card-actions');
+      const select = node('select');
+      select.append(node('option', 'Choose a checklist')); select.firstChild.value = '';
+      for (const note of state.notes) {
+        const option = node('option', note.title || 'Untitled checklist'); option.value = note.id; select.append(option);
+      }
+      const accept = node('button', 'Add to checklist');
+      accept.addEventListener('click', () => run(async () => {
+        if (!select.value) throw new Error('Choose a checklist first.');
+        await api(`/api/actions/${item.id}/accept`, jsonOptions('POST', { note_id: select.value }));
+        await loadActions();
+      }));
+      const reject = node('button', 'Reject');
+      reject.addEventListener('click', () => run(async () => {
+        await api(`/api/actions/${item.id}/reject`, { method: 'POST' });
+        await loadActions();
+      }));
+      actionsRow.append(select, accept, reject); card.append(actionsRow); list.append(card);
+    }
+  }
+  $('action-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    run(async () => {
+      const form = new FormData(formElement);
+      await api('/api/actions', jsonOptions('POST', {
+        title: form.get('title'), source_kind: form.get('source_kind'),
+        source_ref: form.get('source_ref'), source_excerpt: form.get('source_excerpt'),
+      }));
+      formElement.reset(); await loadActions();
     });
   });
 
@@ -195,5 +238,5 @@
     });
   });
 
-  Promise.all([loadProjects(), loadCases()]).catch((error) => notice(error.message || 'Could not load lab.'));
+  Promise.all([loadProjects(), loadActions(), loadCases()]).catch((error) => notice(error.message || 'Could not load lab.'));
 })();

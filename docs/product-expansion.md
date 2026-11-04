@@ -15,6 +15,9 @@ product experience described later in the roadmap is complete.
   caps discovered context conservatively.
 - `manage_notes` supports `list_open` and `append_item` for turning research,
   email, or meeting findings into an existing checklist without replacing it.
+- `/api/actions` and `/lab` provide a source-linked review queue. A proposed
+  task can be accepted into an owner-owned checklist or rejected; duplicate
+  proposals and duplicate checklist items are detected.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations.
 - `/api/evals/cases` saves evaluation prompts and tool/response expectations.
@@ -39,9 +42,9 @@ product experience described later in the roadmap is complete.
 3. **Evaluation runner and view.** Wire saved cases to live model execution,
    trace capture, latency/token/cost metrics, and a UI for case/run comparison.
    Current grading accepts an existing canonical trace and is offline.
-4. **Action inbox.** Add an explicit review queue for tasks extracted from
-   email, research, and meeting notes, with source links and duplicate checks.
-   Current `append_item` is the persistence primitive.
+4. **Automatic action extraction.** Connect email, research, and meeting
+   pipelines to the review queue with verifiable source deep links. The queue
+   currently accepts manual proposals and records their source references.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, local image/TTS providers, voiceover,
    subtitles, and background FFmpeg jobs. The current preview uses placeholders.

@@ -15,6 +15,7 @@
   <main>
     <nav class="tabs" aria-label="Lab sections">
       <button type="button" data-tab="projects" aria-selected="true">Projects</button>
+      <button type="button" data-tab="actions" aria-selected="false">Action inbox</button>
       <button type="button" data-tab="evals" aria-selected="false">Evaluations</button>
       <button type="button" data-tab="studio" aria-selected="false">Understanding Studio</button>
     </nav>
@@ -29,6 +30,25 @@
         <button>Create project</button>
       </form>
       <div id="project-list" class="cards"></div>
+    </section>
+
+    <section id="actions" class="panel" hidden>
+      <h2>Action inbox</h2>
+      <p>Capture a proposed task with its source, then review it before adding it to a checklist.</p>
+      <form id="action-form" class="stack-form">
+        <label>Proposed task <input name="title" required maxlength="300"></label>
+        <label>Source type
+          <select name="source_kind">
+            <option value="email">Email</option><option value="research">Research</option>
+            <option value="meeting">Meeting</option><option value="note">Note</option>
+            <option value="document">Document</option><option value="manual">Manual</option>
+          </select>
+        </label>
+        <label>Source reference <input name="source_ref" placeholder="Message, note, or document ID"></label>
+        <label>Source excerpt <textarea name="source_excerpt" rows="2"></textarea></label>
+        <button>Add proposal</button>
+      </form>
+      <div id="action-list" class="cards"></div>
     </section>
 
     <section id="evals" class="panel" hidden>

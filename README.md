@@ -59,7 +59,7 @@ Native installs, GPU notes, Windows/macOS instructions, HTTPS, and configuration
 - **Email:** Connect IMAP/SMTP accounts for inbox triage, tags, summaries, reminders, reply drafting, and bulk export.
 - **Notes, tasks, and calendar:** Capture notes and todos, schedule agent work, and sync calendar events through CalDAV.
 - **Workspace administration:** Manage user permissions, sessions and sharing, API tokens, webhooks, and TOTP two-factor authentication.
-- **Project Lab:** Group conversations into owner-scoped projects, save trace evaluation cases, and turn outline beats into an editable storyboard timeline with a GPU-free MP4 preview at `/lab`. The [expansion ledger](docs/product-expansion.md) distinguishes these foundations from upcoming production features.
+- **Project Lab:** Group conversations into owner-scoped projects, review source-linked action proposals, save trace evaluation cases, and turn outline beats into an editable storyboard timeline with a GPU-free MP4 preview at `/lab`. The [expansion ledger](docs/product-expansion.md) distinguishes these foundations from upcoming production features.
 
 ## Architecture
 

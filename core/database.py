@@ -374,6 +374,21 @@ class EvaluationRun(TimestampMixin, Base):
     grade_json = Column(JSON, nullable=False)
 
 
+class ActionCandidate(TimestampMixin, Base):
+    """A source-linked task proposal waiting for explicit review."""
+
+    __tablename__ = "action_candidates"
+
+    id = Column(String, primary_key=True)
+    owner = Column(String, nullable=True, index=True)
+    title = Column(String, nullable=False)
+    source_kind = Column(String, nullable=False)
+    source_ref = Column(String, nullable=False, default="")
+    source_excerpt = Column(Text, nullable=False, default="")
+    status = Column(String, nullable=False, default="pending")
+    checklist_note_id = Column(String, nullable=True)
+
+
 class ChatMessage(Base):
     """
     SQLAlchemy model for ChatMessage table.
