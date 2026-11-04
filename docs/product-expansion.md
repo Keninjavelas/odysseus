@@ -21,7 +21,10 @@ product experience described later in the roadmap is complete.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
   also be assigned to a project; the Notes agent tool reads and writes within
-  the current chat's project.
+  the current chat's project. Documents have project membership too: documents
+  created in a project chat inherit it, existing documents can be assigned in
+  Project Lab, and the document library accepts `project_id` to filter results
+  and language facets. Project deletion unassigns documents without deleting them.
 - `/api/evals/cases` saves evaluation prompts and tool/response expectations.
   Submit canonical traces to `/api/evals/cases/<id>/grade`, then compare two
   stored runs via `/api/evals/compare/<left>/<right>`. Project Lab can also
@@ -55,10 +58,10 @@ product experience described later in the roadmap is complete.
 
 ## Next implementation gates
 
-1. **Complete project context isolation.** Add project IDs to documents,
-   memory, research, and media records, and require project filters in agent
-   retrieval. Chats and Notes now have project assignments; the other
-   resource families remain owner-scoped but shared across a user's projects.
+1. **Complete project context isolation.** Add project IDs to memory, research,
+   and media records, and require project filters in all agent retrieval.
+   Chats, Notes, and Documents now have project assignments, but the document
+   agent tools and other retrieval paths still need project filtering.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.

@@ -44,6 +44,7 @@ def _doc_to_dict(doc: Document) -> Dict[str, Any]:
     return {
         "id": doc.id,
         "session_id": doc.session_id,
+        "project_id": doc.project_id,
         "title": doc.title,
         "language": doc.language,
         "current_content": doc.current_content,

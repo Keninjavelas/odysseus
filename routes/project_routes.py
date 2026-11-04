@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from core.database import Note, Project, Session, SessionLocal
+from core.database import Document, Note, Project, Session, SessionLocal
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 
 
@@ -18,13 +18,14 @@ class ProjectInput(BaseModel):
     description: str = Field(default="", max_length=2000)
 
 
-def _payload(project, session_count=0, note_count=0):
+def _payload(project, session_count=0, note_count=0, document_count=0):
     return {
         "id": project.id,
         "name": project.name,
         "description": project.description or "",
         "session_count": session_count,
         "note_count": note_count,
+        "document_count": document_count,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }
@@ -46,7 +47,8 @@ def list_projects(request: Request):
                     .order_by(Project.updated_at.desc()).all())
         return [_payload(project, db.query(Session).filter(
             Session.owner == owner, Session.project_id == project.id).count(),
-            db.query(Note).filter(Note.owner == owner, Note.project_id == project.id).count())
+            db.query(Note).filter(Note.owner == owner, Note.project_id == project.id).count(),
+            db.query(Document).filter(Document.owner == owner, Document.project_id == project.id).count())
             for project in projects]
     finally:
         db.close()
@@ -98,6 +100,8 @@ def delete_project(request: Request, project_id: str):
             {Session.project_id: None}, synchronize_session=False)
         db.query(Note).filter(Note.owner == owner, Note.project_id == project_id).update(
             {Note.project_id: None}, synchronize_session=False)
+        db.query(Document).filter(Document.owner == owner, Document.project_id == project_id).update(
+            {Document.project_id: None}, synchronize_session=False)
         db.delete(project)
         db.commit()
         return {"deleted": project_id}
@@ -115,6 +119,9 @@ def assign_session(request: Request, project_id: str, session_id: str):
         if session is None:
             raise HTTPException(404, "Session not found")
         session.project_id = project_id
+        db.query(Document).filter(Document.owner == owner,
+                                  Document.session_id == session_id).update(
+            {Document.project_id: project_id}, synchronize_session=False)
         db.commit()
         return {"session_id": session_id, "project_id": project_id}
     finally:
@@ -133,6 +140,9 @@ def unassign_session(request: Request, project_id: str, session_id: str):
         if session is None:
             raise HTTPException(404, "Session not found in project")
         session.project_id = None
+        db.query(Document).filter(Document.owner == owner,
+                                  Document.session_id == session_id).update(
+            {Document.project_id: None}, synchronize_session=False)
         db.commit()
         return {"session_id": session_id, "project_id": None}
     finally:
@@ -168,5 +178,40 @@ def unassign_note(request: Request, project_id: str, note_id: str):
         note.project_id = None
         db.commit()
         return {"note_id": note_id, "project_id": None}
+    finally:
+        db.close()
+
+
+@router.put("/{project_id}/documents/{document_id}")
+def assign_document(request: Request, project_id: str, document_id: str):
+    owner = effective_user(request)
+    db = SessionLocal()
+    try:
+        _owned_project(db, project_id, owner)
+        document = db.query(Document).filter(Document.id == document_id,
+                                             Document.owner == owner).first()
+        if document is None:
+            raise HTTPException(404, "Document not found")
+        document.project_id = project_id
+        db.commit()
+        return {"document_id": document_id, "project_id": project_id}
+    finally:
+        db.close()
+
+
+@router.delete("/{project_id}/documents/{document_id}")
+def unassign_document(request: Request, project_id: str, document_id: str):
+    owner = effective_user(request)
+    db = SessionLocal()
+    try:
+        _owned_project(db, project_id, owner)
+        document = db.query(Document).filter(Document.id == document_id,
+                                             Document.owner == owner,
+                                             Document.project_id == project_id).first()
+        if document is None:
+            raise HTTPException(404, "Document not found in project")
+        document.project_id = None
+        db.commit()
+        return {"document_id": document_id, "project_id": None}
     finally:
         db.close()

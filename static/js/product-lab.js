@@ -29,7 +29,9 @@
   }));
 
   async function loadProjects() {
-    const notesResult = await api('/api/notes');
+    const [notesResult, documentsResult] = await Promise.all([
+      api('/api/notes'), api('/api/documents/library?limit=50'),
+    ]);
     [state.projects, state.sessions] = await Promise.all([api('/api/projects'), api('/api/sessions')]);
     const modelSelect = $('live-eval-form').elements.source_session;
     modelSelect.replaceChildren();
@@ -38,12 +40,13 @@
       option.value = session.id; modelSelect.append(option);
     }
     const assignableNotes = (notesResult.notes || []).filter((note) => !note.project_id || state.projects.some((project) => project.id === note.project_id));
+    const assignableDocuments = (documentsResult.documents || []).filter((doc) => !doc.project_id || state.projects.some((project) => project.id === doc.project_id));
     const list = $('project-list'); list.replaceChildren();
     if (!state.projects.length) list.append(node('p', 'No projects yet.'));
     for (const project of state.projects) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', project.name), node('p', project.description || 'No description'),
-                  node('small', `${project.session_count} conversations · ${project.note_count} notes`));
+                  node('small', `${project.session_count} conversations · ${project.note_count} notes · ${project.document_count} documents`));
       const actions = node('div', undefined, 'card-actions');
       const select = node('select');
       select.append(node('option', 'Choose a conversation'));
@@ -79,6 +82,20 @@
         await loadProjects();
       }));
       noteActions.append(noteSelect, assignNote); card.append(noteActions);
+      const documentActions = node('div', undefined, 'card-actions');
+      const documentSelect = node('select');
+      documentSelect.append(node('option', 'Choose a recent document')); documentSelect.firstChild.value = '';
+      assignableDocuments.filter((doc) => !doc.project_id || doc.project_id === project.id).forEach((doc) => {
+        const option = node('option', `${doc.title || 'Untitled'}${doc.project_id ? ' · assigned' : ''}`);
+        option.value = doc.id; documentSelect.append(option);
+      });
+      const assignDocument = node('button', 'Assign document');
+      assignDocument.addEventListener('click', () => run(async () => {
+        if (!documentSelect.value) throw new Error('Choose a document first.');
+        await api(`/api/projects/${project.id}/documents/${documentSelect.value}`, { method: 'PUT' });
+        await loadProjects();
+      }));
+      documentActions.append(documentSelect, assignDocument); card.append(documentActions);
     }
   }
   $('project-form').addEventListener('submit', (event) => {

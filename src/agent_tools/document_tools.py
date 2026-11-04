@@ -469,6 +469,7 @@ def _create_pdf_text_derivative(db, *, source_doc, content: str, owner: Optional
     new_doc = Document(
         id=doc_id,
         session_id=getattr(source_doc, "session_id", None),
+        project_id=getattr(source_doc, "project_id", None),
         title=title,
         language="markdown",
         current_content=clean,
@@ -585,6 +586,7 @@ class CreateDocumentTool:
             doc = Document(
                 id=doc_id,
                 session_id=session_id,
+                project_id=_sess.project_id if _sess else None,
                 title=title,
                 language=language,
                 current_content=content,

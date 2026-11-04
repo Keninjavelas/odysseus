@@ -185,6 +185,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             doc = Document(
                 id=doc_id,
                 session_id=req.session_id,
+                project_id=session.project_id if session else None,
                 title=req.title,
                 language=language,
                 current_content=req.content,
@@ -518,8 +519,13 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         offset: int = Query(0, ge=0),
         limit: int = Query(20, ge=1, le=50),
         archived: bool = Query(False),
+        project_id: Optional[str] = Query(None),
     ) -> Dict[str, Any]:
         user = get_current_user(request)
+        # Internal callers invoke this route function directly; in that path
+        # FastAPI has not resolved the Query default to None.
+        if not isinstance(project_id, (str, type(None))):
+            project_id = None
         db = SessionLocal()
         try:
             from sqlalchemy import or_
@@ -545,6 +551,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 .filter(Document.is_active == True).filter(_arch_cond)
             )
             lang_q = _owner_session_filter(lang_q, user)
+            if project_id is not None:
+                lang_q = lang_q.filter(Document.project_id == project_id) if project_id else lang_q.filter(Document.project_id.is_(None))
             lang_rows = lang_q.group_by(library_language_expr).all()
             languages = _aggregate_language_facets(lang_rows)
 
@@ -555,6 +563,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 .filter(Document.is_active == True).filter(_arch_cond)
             )
             sc_q = _owner_session_filter(sc_q, user)
+            if project_id is not None:
+                sc_q = sc_q.filter(Document.project_id == project_id) if project_id else sc_q.filter(Document.project_id.is_(None))
             session_count = sc_q.scalar()
 
             # Base query
@@ -564,6 +574,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 .filter(Document.is_active == True).filter(_arch_cond)
             )
             q = _owner_session_filter(q, user)
+            if project_id is not None:
+                q = q.filter(Document.project_id == project_id) if project_id else q.filter(Document.project_id.is_(None))
 
             # Search filter — split on whitespace and require EACH term to
             # match (title OR content). A single `%foo bar%` LIKE only matched
@@ -610,6 +622,7 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 documents.append({
                     "id": doc.id,
                     "session_id": doc.session_id,
+                    "project_id": doc.project_id,
                     "session_name": session_name,
                     "title": doc.title,
                     "language": _library_language_for_document(doc),
@@ -935,7 +948,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             if req.session_id is not None:
                 # Empty string = unlink from session
                 if req.session_id:
-                    _get_session_or_404(db, req.session_id, user)
+                    linked_session = _get_session_or_404(db, req.session_id, user)
+                    doc.project_id = linked_session.project_id
                 doc.session_id = req.session_id if req.session_id else None
                 if not req.session_id:
                     # Tab closed / doc detached from its session — drop the
