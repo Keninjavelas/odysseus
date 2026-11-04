@@ -200,10 +200,10 @@ Remaining pro gap (polish, not a rebuild):
 - Selection refine (feather/contract/select-inverse parity) and channel/mask
   workflows surfaced in the UI.
 
-### 2. Documentary compiler (formerly "Understanding Studio") — NEW, not started
-Turns a high-level outline — or just a **topic**, which Odysseus can research
-into an outline via Deep Research/web/memory — into a narrated MP4 episode.
-As an episode `Plan` executed by `PlanExecutor`:
+### 2. Documentary compiler (formerly "Understanding Studio") — dry-run foundation built
+The current `/lab` workflow turns explicit outline beats into an editable
+three-lane timeline and a GPU-free MP4 storyboard preview. It does not yet
+research a topic or synthesize narration. Target production architecture:
 
 - **Screenplay / shot expansion** — LLM expands the outline into an ordered
   shot list (target ≈60 shots / ~8 min) validated by strict Pydantic schemas so
@@ -219,15 +219,15 @@ As an episode `Plan` executed by `PlanExecutor`:
   fade / Ken-Burns) applied to stills via **FFmpeg**, then auto-assemble
   voiceover + motion clips into a timeline / concatenated MP4 landed in Gallery.
 
-**Rendering modes (both run inside Odysseus, no separate CLI):**
+**Target rendering modes (inside Odysseus, no separate CLI):**
 - *Production*: local diffusion_server / ComfyUI → FFmpeg motion. Cloud off by
   default; a HuggingFace free tier only behind an explicit
   `UNDERSTANDING_ENABLE_FREE_CLOUD=1` after confirming no payment path. Paid
   providers (Runway, Stability) are never selected.
-- *Dry run*: `MockImageProvider` + `MockTTSProvider` (placeholder frames +
-  silent audio) validate screenplay → shot-plan → FFmpeg assembly end-to-end
-  with **no GPU / no API calls** — the first milestone to build, since it
-  proves the pipeline shape against the existing executor.
+- *Dry run*: placeholder shot cards + silent audio now validate outline →
+  timeline → FFmpeg assembly end-to-end with **no GPU / no API calls**.
+  `MockImageProvider` / `MockTTSProvider` adapters and `PlanExecutor`
+  integration remain to build.
 
 **Deferred / gated:**
 - **Real text-to-video** (LTX-Video / SVD / Wan) stays isolated from production.
@@ -241,12 +241,10 @@ As an episode `Plan` executed by `PlanExecutor`:
 - **Screenplay enhancement** — tune prompts for more compelling, emotionally
   resonant documentary pacing.
 
-### 3. Video editor / NLE ("Premiere-style") — NEW, not started
-An editor for manual assembly and polish on top of (or independent of) compiled
-episodes. **Better path than a browser GPU-compositor:** the compiler emits an
-**editable timeline as data (JSON / EDL)**; the NLE is a thin timeline UI that
-delegates all pixel/audio work back to server-side FFmpeg via `bg_jobs`, so it
-stays re-editable without shipping a rendering engine in JS.
+### 3. Video editor / NLE ("Premiere-style") — timeline foundation built
+The compiler emits an editable JSON timeline; `/lab` can change shot text,
+duration, and order and regenerate a preview. The target NLE delegates pixel
+and audio work to background FFmpeg jobs so exports stay editable.
 - Multi-track timeline (video + audio), clip trim / split / ripple, transitions.
 - Keyframeable transforms + the same camera-motion vocabulary the compiler uses
   (pan/zoom/fade), so compiled episodes are re-editable, not final-only.
