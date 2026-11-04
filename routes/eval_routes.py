@@ -172,13 +172,15 @@ def compare_runs(request: Request, left_id: str, right_id: str):
             raise HTTPException(404, "Evaluation run not found")
         if runs[0].case_id != runs[1].case_id:
             raise HTTPException(422, "Runs must belong to the same case")
+        def measurement_delta(key):
+            left = runs[0].grade_json.get("measurements", {}).get(key)
+            right = runs[1].grade_json.get("measurements", {}).get(key)
+            return right - left if isinstance(left, (int, float)) and isinstance(right, (int, float)) else None
         return {"case_id": runs[0].case_id,
                 "left": _run_payload(runs[0]), "right": _run_payload(runs[1]),
                 "delta": {"tool_count": runs[1].grade_json["tool_count"] - runs[0].grade_json["tool_count"],
-                          "response_time": (runs[1].grade_json.get("measurements", {}).get("response_time", 0)
-                                            - runs[0].grade_json.get("measurements", {}).get("response_time", 0)),
-                          "total_tokens": (runs[1].grade_json.get("measurements", {}).get("total_tokens", 0)
-                                           - runs[0].grade_json.get("measurements", {}).get("total_tokens", 0)),
+                          "response_time": measurement_delta("response_time"),
+                          "total_tokens": measurement_delta("total_tokens"),
                           "passed": [runs[0].grade_json["passed"], runs[1].grade_json["passed"]]}}
     finally:
         db.close()

@@ -137,7 +137,8 @@
   async function loadCases() {
     state.cases = await api('/api/evals/cases');
     const list = $('case-list');
-    const selectors = [$('grade-form').elements.case_id, $('live-eval-form').elements.case_id];
+    const selectors = [$('grade-form').elements.case_id, $('live-eval-form').elements.case_id,
+                       $('history-case')];
     list.replaceChildren(); selectors.forEach((select) => select.replaceChildren());
     for (const item of state.cases) {
       const card = node('article', undefined, 'card');
@@ -188,13 +189,47 @@
     if (Object.keys(measures).length) {
       target.append(node('p', `Time: ${measures.response_time ?? '—'}s · Tokens: ${measures.total_tokens ?? '—'} · Context: ${measures.context_percent ?? '—'}%`));
     }
-    const runs = await api(`/api/evals/cases/${caseId}/runs`);
-    if (runs.length >= 2) {
-      const compared = await api(`/api/evals/compare/${runs[1].id}/${runs[0].id}`);
-      target.append(node('small', `Latest two runs: tool count change ${compared.delta.tool_count >= 0 ? '+' : ''}${compared.delta.tool_count}.`));
-      target.append(node('small', ` Time change ${compared.delta.response_time >= 0 ? '+' : ''}${compared.delta.response_time}s; token change ${compared.delta.total_tokens >= 0 ? '+' : ''}${compared.delta.total_tokens}.`));
-    }
+    $('history-case').value = caseId;
+    await loadRunHistory();
   }
+  async function loadRunHistory() {
+    const caseId = $('history-case').value;
+    const list = $('run-history'); list.replaceChildren();
+    const left = $('compare-left'), right = $('compare-right');
+    left.replaceChildren(); right.replaceChildren(); $('compare-result').replaceChildren();
+    if (!caseId) { list.append(node('p', 'Save a case first.')); return; }
+    const runs = await api(`/api/evals/cases/${caseId}/runs`);
+    for (const item of runs) {
+      const card = node('article', undefined, 'card');
+      const measures = item.grade.measurements || {};
+      card.append(node('h4', `${item.grade.passed ? 'Passed' : 'Needs review'} · ${item.model_label || 'Unlabeled model'}`),
+                  node('small', `${item.created_at || ''} · ${item.grade.tool_count} tools · ${measures.total_tokens ?? '—'} tokens · ${measures.response_time ?? '—'}s`));
+      list.append(card);
+      for (const select of [left, right]) {
+        const option = node('option', `${item.model_label || 'Unlabeled'} · ${item.created_at || item.id}`);
+        option.value = item.id; select.append(option);
+      }
+    }
+    if (!runs.length) list.append(node('p', 'No runs saved for this case yet.'));
+    if (runs.length > 1) left.value = runs[1].id;
+    $('compare-runs').disabled = runs.length < 2;
+  }
+  $('load-run-history').addEventListener('click', () => run(loadRunHistory));
+  $('compare-runs').addEventListener('click', () => run(async () => {
+    const first = $('compare-left').value, second = $('compare-right').value;
+    if (!first || !second || first === second) throw new Error('Choose two different runs.');
+    const compared = await api(`/api/evals/compare/${first}/${second}`);
+    const target = $('compare-result'); target.replaceChildren();
+    const formatDelta = (value, unit = '') => value == null ? 'unavailable' :
+      `${value >= 0 ? '+' : ''}${Number(value.toFixed(2))}${unit}`;
+    target.append(node('p', `Pass: ${compared.left.grade.passed} → ${compared.right.grade.passed}`),
+                  node('p', `Tool calls: ${formatDelta(compared.delta.tool_count)} · Time: ${formatDelta(compared.delta.response_time, 's')} · Tokens: ${formatDelta(compared.delta.total_tokens)}`));
+    for (const [name, passed] of Object.entries(compared.right.grade.checks)) {
+      if (compared.left.grade.checks[name] !== passed) {
+        target.append(node('p', `${name.replaceAll('_', ' ')}: ${compared.left.grade.checks[name]} → ${passed}`));
+      }
+    }
+  }));
   $('live-eval-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const formElement = event.currentTarget;

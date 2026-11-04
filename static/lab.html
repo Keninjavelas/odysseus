@@ -53,7 +53,7 @@
 
     <section id="evals" class="panel" hidden>
       <h2>Evaluation cases</h2>
-      <p>Save a prompt and grade an existing canonical agent trace. Live model runs are a later step.</p>
+      <p>Save prompts, grade canonical traces, or run a case against a configured model in read-only plan mode.</p>
       <form id="case-form" class="stack-form">
         <label>Case name <input name="name" required maxlength="120"></label>
         <label>Prompt <textarea name="prompt" required rows="3"></textarea></label>
@@ -82,6 +82,18 @@
           <button>Grade trace</button>
         </form>
         <div id="grade-result"></div>
+      </div>
+      <div class="subpanel">
+        <h3>Run history</h3>
+        <label>Case <select id="history-case"></select></label>
+        <button id="load-run-history" type="button">Show runs</button>
+        <div id="run-history" class="cards"></div>
+        <div class="card-actions">
+          <label>First run <select id="compare-left"></select></label>
+          <label>Second run <select id="compare-right"></select></label>
+          <button id="compare-runs" type="button">Compare runs</button>
+        </div>
+        <div id="compare-result"></div>
       </div>
     </section>
 

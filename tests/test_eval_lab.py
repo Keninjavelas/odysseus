@@ -67,7 +67,11 @@ def test_saved_case_replay_and_compare_are_private(eval_db):
     assert first["grade"]["passed"] is True
     assert native["grade"]["passed"] is True
     assert native["grade"]["measurements"]["total_tokens"] == 130
-    assert eval_routes.compare_runs(alice, first["id"], second["id"])["delta"]["tool_count"] == 0
+    comparison = eval_routes.compare_runs(alice, first["id"], second["id"])
+    assert comparison["delta"]["tool_count"] == 0
+    assert comparison["delta"]["response_time"] is None
+    assert comparison["delta"]["total_tokens"] is None
+    assert eval_routes.compare_runs(alice, first["id"], native["id"])["delta"]["total_tokens"] is None
     assert len(eval_routes.list_runs(alice, case["id"])) == 3
     with pytest.raises(HTTPException) as denied:
         eval_routes.get_run(bob, first["id"])

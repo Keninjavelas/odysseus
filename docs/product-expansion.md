@@ -27,7 +27,9 @@ product experience described later in the roadmap is complete.
   stored runs via `/api/evals/compare/<left>/<right>`. Project Lab can also
   start a fresh read-only evaluation chat against a configured model, capture
   its native SSE trace, and grade it. When the run reports metrics, the lab
-  shows response time, token use, and context utilization.
+  shows response time, token use, and context utilization. Run history and
+  selectable pairwise comparisons are visible in the lab; missing metrics are
+  labeled unavailable rather than treated as zero.
 - `/api/studio/episodes` compiles a line-based outline into a saved video,
   narration, and captions timeline. Its GPU-free preview contains shot cards
   and silent audio. `PATCH /api/studio/episodes/<id>/timeline` can edit shot
@@ -61,7 +63,7 @@ product experience described later in the roadmap is complete.
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.
 3. **Evaluation measurement and view.** Add cost and provider-verified latency
-   metrics, repeatable model and profile sweeps, and a richer case/run comparison UI.
+   metrics, repeatable model and profile sweeps, and trend charts across runs.
    The current live runner uses plan mode, so effectful tool workflows still
    need isolated disposable fixtures before they can be evaluated safely.
 4. **Automatic action extraction.** Connect email, research, and meeting
