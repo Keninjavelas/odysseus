@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Lab · Odysseus</title>
+  <link rel="stylesheet" href="/static/css/product-lab.css">
+  <script src="/static/js/product-lab.js" defer></script>
+</head>
+<body>
+  <header>
+    <a href="/" class="back">← Odysseus</a>
+    <div><h1>Project Lab</h1><p>Projects, trace evaluations, and Understanding Studio</p></div>
+  </header>
+  <main>
+    <nav class="tabs" aria-label="Lab sections">
+      <button type="button" data-tab="projects" aria-selected="true">Projects</button>
+      <button type="button" data-tab="evals" aria-selected="false">Evaluations</button>
+      <button type="button" data-tab="studio" aria-selected="false">Understanding Studio</button>
+    </nav>
+    <p id="status" role="status" aria-live="polite"></p>
+
+    <section id="projects" class="panel">
+      <h2>Projects</h2>
+      <p>Group related conversations under one owner-scoped project.</p>
+      <form id="project-form" class="inline-form">
+        <label>Project name <input name="name" required maxlength="120"></label>
+        <label>Description <input name="description" maxlength="2000"></label>
+        <button>Create project</button>
+      </form>
+      <div id="project-list" class="cards"></div>
+    </section>
+
+    <section id="evals" class="panel" hidden>
+      <h2>Evaluation cases</h2>
+      <p>Save a prompt and grade an existing canonical agent trace. Live model runs are a later step.</p>
+      <form id="case-form" class="stack-form">
+        <label>Case name <input name="name" required maxlength="120"></label>
+        <label>Prompt <textarea name="prompt" required rows="3"></textarea></label>
+        <label>Expected tools in order <input name="expected_tools" placeholder="web_search, web_fetch"></label>
+        <label>Forbidden tools <input name="forbidden_tools" placeholder="bash"></label>
+        <label>Required response text <input name="required_text"></label>
+        <button>Save case</button>
+      </form>
+      <div id="case-list" class="cards"></div>
+      <div class="subpanel">
+        <h3>Grade a trace</h3>
+        <form id="grade-form" class="stack-form">
+          <label>Case <select name="case_id" required></select></label>
+          <label>Model label <input name="model_label" placeholder="local 8k"></label>
+          <label>Final response <textarea name="response_text" rows="2"></textarea></label>
+          <label>Canonical trace JSON array <textarea name="trace" rows="8" required spellcheck="false"></textarea></label>
+          <button>Grade trace</button>
+        </form>
+        <div id="grade-result"></div>
+      </div>
+    </section>
+
+    <section id="studio" class="panel" hidden>
+      <h2>Understanding Studio</h2>
+      <p>Turn outline beats into an editable timeline and a GPU-free storyboard MP4.</p>
+      <form id="episode-form" class="stack-form">
+        <label>Episode title <input name="title" required maxlength="160"></label>
+        <label>Outline · one beat per line <textarea name="outline" rows="8" required placeholder="Opening shot and central question&#10;First fact and supporting visual&#10;Closing reflection"></textarea></label>
+        <label class="check"><input type="checkbox" name="render_preview" checked> Render MP4 preview</label>
+        <button>Create episode</button>
+      </form>
+      <div id="episode-result" class="subpanel" hidden>
+        <h3 id="episode-title"></h3>
+        <p id="episode-meta"></p>
+        <video id="episode-video" controls hidden></video>
+        <p><a id="timeline-download" download="timeline.json">Download editable timeline JSON</a></p>
+        <div id="shot-list" class="cards"></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

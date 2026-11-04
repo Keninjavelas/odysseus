@@ -1042,6 +1042,10 @@ async def serve_index(request: Request):
 async def serve_notes(request: Request):
     return await serve_index(request)
 
+@app.get("/lab")
+async def serve_product_lab(request: Request):
+    return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/lab.html"))
+
 @app.get("/calendar")
 async def serve_calendar(request: Request):
     return await serve_index(request)

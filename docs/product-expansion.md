@@ -24,6 +24,8 @@ product experience described later in the roadmap is complete.
   narration, and captions timeline. Its GPU-free preview contains shot cards
   and silent audio. `PATCH /api/studio/episodes/<id>/timeline` can edit shot
   text, duration, and order, then regenerate the MP4 preview.
+- `/lab` exposes project creation and chat assignment, saved evaluation cases
+  and trace grading, and the studio storyboard editor in the browser.
 
 ## Next implementation gates
 
