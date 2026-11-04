@@ -108,6 +108,11 @@
         <h3 id="episode-title"></h3>
         <p id="episode-meta"></p>
         <button id="render-episode" type="button">Render MP4 preview</button>
+        <div id="source-audio-controls" hidden>
+          <p>Attach the original interview audio to the timed transcript. Each shot plays its matching source range.</p>
+          <input id="source-audio-file" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac" aria-label="Interview source audio">
+          <button id="upload-source-audio" type="button">Use source audio</button>
+        </div>
         <video id="episode-video" controls hidden></video>
         <p><a id="timeline-download" download="timeline.json">Download editable timeline JSON</a></p>
         <p><a id="captions-download" download="captions.srt">Download caption SRT</a></p>

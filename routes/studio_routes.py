@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -266,6 +267,69 @@ def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
     return _attach_narration(directory, timeline, clip, shot_id, raw, extension)
 
 
+@router.post("/episodes/{episode_id}/source-audio")
+def upload_episode_source_audio(request: Request, episode_id: str,
+                                audio: UploadFile = File(...),
+                                expected_revision: int | None = Form(None)):
+    """Attach one interview recording to all timecoded rough-cut shots."""
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if timeline.get("render_mode") != "transcript_rough_cut":
+        raise HTTPException(422, "Source audio requires an SRT rough cut")
+    if expected_revision is not None and expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before uploading")
+    extension = Path(audio.filename or "").suffix.lower()
+    if extension not in {".wav", ".mp3", ".m4a", ".ogg", ".flac"}:
+        raise HTTPException(422, "Source audio must be WAV, MP3, M4A, OGG, or FLAC")
+    raw = audio.file.read(100_000_001)
+    if len(raw) > 100_000_000:
+        raise HTTPException(413, "Source audio exceeds 100 MB")
+    if not raw:
+        raise HTTPException(422, "Source audio is empty")
+    ffprobe, ffmpeg = shutil.which("ffprobe"), shutil.which("ffmpeg")
+    if not ffprobe or not ffmpeg:
+        raise HTTPException(503, "FFmpeg and FFprobe are required for source audio")
+    audio_dir = directory / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    source = audio_dir / (uuid.uuid4().hex + extension)
+    source.write_bytes(raw)
+    try:
+        probe = subprocess.run([ffprobe, "-v", "error", "-select_streams", "a:0",
+                                "-show_entries", "stream=codec_type:format=duration", "-of", "json",
+                                str(source)], capture_output=True, text=True, timeout=15)
+        details = json.loads(probe.stdout) if probe.returncode == 0 else {}
+        duration = float(details.get("format", {}).get("duration", "nan"))
+        if not details.get("streams") or not math.isfinite(duration):
+            raise ValueError("No decodable audio stream")
+        source_end = max(float(clip["source_end"]) for clip in timeline["tracks"]["narration"]
+                         if clip.get("source_end") is not None)
+        if duration + 0.05 < source_end:
+            raise ValueError("Audio is shorter than the transcript's last timecode")
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        source.unlink(missing_ok=True)
+        raise HTTPException(422, f"Invalid source audio: {error}") from error
+    for clip in timeline["tracks"]["narration"]:
+        if clip.get("source_start") is None or clip.get("source_end") is None:
+            continue
+        clip["audio_path"] = f"audio/{source.name}"
+        clip["audio_offset"] = float(clip["source_start"])
+        clip["source_audio"] = True
+        clip["placeholder"] = False
+    timeline["source_audio_path"] = f"audio/{source.name}"
+    timeline["revision"] = int(timeline.get("revision") or 1) + 1
+    try:
+        render_preview(timeline, directory, ffmpeg=ffmpeg)
+    except RuntimeError as error:
+        source.unlink(missing_ok=True)
+        raise HTTPException(503, str(error)) from error
+    save_timeline(timeline, directory)
+    return {"timeline": timeline,
+            "preview_url": f"/api/studio/episodes/{episode_id}/preview"}
+
+
 @router.post("/episodes/{episode_id}/shots/{shot_id}/synthesize-narration")
 def synthesize_shot_narration(request: Request, episode_id: str, shot_id: str,
                               payload: NarrationSynthesis):
@@ -326,6 +390,7 @@ def _attach_narration(directory: Path, timeline: dict, clip: dict, shot_id: str,
         raise HTTPException(422, "Invalid narration audio")
     clip["audio_path"] = f"audio/{filename}"
     clip["audio_offset"] = 0.0
+    clip["source_audio"] = False
     clip["placeholder"] = False
     if narration_text is not None:
         clip["text"] = narration_text

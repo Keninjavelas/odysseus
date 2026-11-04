@@ -104,7 +104,7 @@ def compile_subtitles(title: str, srt: str, *, episode_id: str | None = None) ->
         gap = round(start - cursor, 3)
         while gap > 0:
             piece = min(30.0, gap)
-            append_shot(piece, "")
+            append_shot(piece, "", cursor, round(cursor + piece, 3))
             gap = round(gap - piece, 3)
         append_shot(round(end - start, 3), cue_text, start, end)
     if cursor > 300:
@@ -300,9 +300,15 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
                     raise RuntimeError(f"Shot {index} narration is missing")
                 offset = float(clip.get("audio_offset") or 0)
                 audio_command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                                 "-ss", str(offset), "-i", str(source), "-vn", "-af",
+                                 "-ss", str(offset)]
+                if clip.get("source_audio") and clip.get("source_end") is not None:
+                    source_length = float(clip["source_end"]) - offset
+                    if source_length <= 0:
+                        raise RuntimeError(f"Shot {index} source time range is invalid")
+                    audio_command.extend(["-t", str(source_length)])
+                audio_command.extend(["-i", str(source), "-vn", "-af",
                                  f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS",
-                                 "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", str(segment)]
+                                 "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", str(segment)])
             else:
                 audio_command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
                                  "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",

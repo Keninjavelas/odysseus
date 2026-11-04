@@ -82,6 +82,24 @@ def test_srt_import_preserves_source_timecodes_and_pauses(tmp_path, monkeypatch)
             alice, episode_id, studio_routes.RenderRequest(expected_revision=1))
         assert studio_routes.get_preview(alice, episode_id).path.is_file()
         assert rendered["timeline"]["revision"] == 1
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        source_audio = io.BytesIO()
+        with wave.open(source_audio, "wb") as wav:
+            wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(16000)
+            wav.writeframes(b"".join(struct.pack("<h", int(9000 * math.sin(2 * math.pi * 440 * t / 16000)))
+                                    for t in range(80000)))
+        source_audio.seek(0)
+        attached = studio_routes.upload_episode_source_audio(
+            alice, episode_id, UploadFile(file=source_audio, filename="interview.wav"),
+            expected_revision=1)
+        assert attached["timeline"]["source_audio_path"].endswith(".wav")
+        assert all(clip["source_audio"] for clip in attached["timeline"]["tracks"]["narration"])
+        preview = studio_routes.get_preview(alice, episode_id).path
+        decoded = subprocess.run([shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error",
+                                  "-ss", "3.2", "-i", str(preview), "-vn", "-t", "0.2",
+                                  "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+                                 capture_output=True, check=True).stdout
+        assert any(sample[0] != 0 for sample in struct.iter_unpack("<h", decoded))
 
 
 def test_storyboard_edit_keeps_three_lanes_aligned():

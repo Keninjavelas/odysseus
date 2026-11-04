@@ -248,6 +248,7 @@
     $('episode-result').hidden = false;
     $('episode-title').textContent = timeline.title;
     $('episode-meta').textContent = `${timeline.tracks.video.length} shots · ${timeline.duration} seconds · revision ${timeline.revision} · ${timeline.render_mode}`;
+    $('source-audio-controls').hidden = timeline.render_mode !== 'transcript_rough_cut';
     $('timeline-download').href = `/api/studio/episodes/${timeline.episode_id}/timeline`;
     $('captions-download').href = `/api/studio/episodes/${timeline.episode_id}/captions.srt`;
     const video = $('episode-video'); video.hidden = !previewUrl;
@@ -282,7 +283,9 @@
       }));
       actions.append(fileInput, upload);
       const voice = timeline.tracks.narration[index];
-      if (voice.audio_path) {
+      if (voice.source_audio) {
+        card.append(node('small', `Source audio ${voice.source_start}s–${voice.source_end}s`));
+      } else if (voice.audio_path) {
         const player = node('audio'); player.controls = true;
         player.src = `/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/narration`;
         card.append(player);
@@ -404,6 +407,18 @@
     const timeline = state.episode;
     const result = await api(`/api/studio/episodes/${timeline.episode_id}/render`,
                              jsonOptions('POST', { expected_revision: timeline.revision }));
+    showEpisode(result.timeline, result.preview_url);
+    await loadEpisodes();
+  }));
+  $('upload-source-audio').addEventListener('click', () => run(async () => {
+    const timeline = state.episode;
+    const file = $('source-audio-file').files[0];
+    if (!timeline || !file) throw new Error('Open an SRT rough cut and choose its source audio first.');
+    const body = new FormData();
+    body.append('audio', file);
+    body.append('expected_revision', String(timeline.revision));
+    const result = await api(`/api/studio/episodes/${timeline.episode_id}/source-audio`,
+                             { method: 'POST', body });
     showEpisode(result.timeline, result.preview_url);
     await loadEpisodes();
   }));

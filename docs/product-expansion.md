@@ -43,7 +43,9 @@ product experience described later in the roadmap is complete.
   after a page refresh. A UTF-8 SRT transcript can also create a silent rough
   cut with cue source timecodes and editable pause shots; preview rendering can
   be requested separately. This import currently accepts up to 60 shots and
-  five minutes, and it does not ingest the original interview video.
+  five minutes. The original interview audio can be attached once and played
+  from the matching source ranges, including pauses. Original interview video
+  import and transcription are still pending.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
@@ -77,8 +79,8 @@ product experience described later in the roadmap is complete.
 
 ### Premiere-style editing and Understanding Studio
 
-- **Transcript-first rough cut:** the timed SRT-to-storyboard import is built.
-  Next, ingest interview audio/video, transcribe locally, and select sentences
+- **Transcript-first rough cut:** timed SRT import and source-audio playback are
+  built. Next, ingest interview video, transcribe locally, and select sentences
   to cut the original media with corresponding source timecodes.
 - **Evidence-aware documentary:** each narration claim points to its source
   document and time range; unsupported claims are flagged before rendering.
