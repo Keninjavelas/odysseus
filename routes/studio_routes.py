@@ -213,6 +213,8 @@ def upload_shot_still(request: Request, episode_id: str, shot_id: str,
     filename = uuid.uuid4().hex + ".jpg"
     frame.save(assets / filename, format="JPEG", quality=92)
     shot["media_path"] = f"assets/{filename}"
+    shot["video_path"] = None
+    shot["video_offset"] = 0.0
     shot["placeholder"] = False
     timeline["revision"] = int(timeline.get("revision") or 1) + 1
     try:
@@ -328,6 +330,95 @@ def upload_episode_source_audio(request: Request, episode_id: str,
     save_timeline(timeline, directory)
     return {"timeline": timeline,
             "preview_url": f"/api/studio/episodes/{episode_id}/preview"}
+
+
+@router.post("/episodes/{episode_id}/source-video")
+def upload_episode_source_video(request: Request, episode_id: str,
+                                video: UploadFile = File(...),
+                                expected_revision: int | None = Form(None),
+                                render: bool = Form(False)):
+    """Bind a local interview video to SRT cue ranges for a source-backed cut."""
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if timeline.get("render_mode") != "transcript_rough_cut":
+        raise HTTPException(422, "Source video requires an SRT rough cut")
+    if expected_revision is not None and expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before uploading")
+    extension = Path(video.filename or "").suffix.lower()
+    if extension not in {".mp4", ".mov", ".webm", ".mkv"}:
+        raise HTTPException(422, "Source video must be MP4, MOV, WebM, or MKV")
+    ffprobe, ffmpeg = shutil.which("ffprobe"), shutil.which("ffmpeg")
+    if not ffprobe or not ffmpeg:
+        raise HTTPException(503, "FFmpeg and FFprobe are required for source video")
+    video_dir = directory / "video"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    source = video_dir / (uuid.uuid4().hex + extension)
+    total = 0
+    try:
+        with source.open("wb") as output:
+            while chunk := video.file.read(1_048_576):
+                total += len(chunk)
+                if total > 300_000_000:
+                    raise HTTPException(413, "Source video exceeds 300 MB")
+                output.write(chunk)
+    except Exception:
+        source.unlink(missing_ok=True)
+        raise
+    if not total:
+        source.unlink(missing_ok=True)
+        raise HTTPException(422, "Source video is empty")
+    try:
+        probe = subprocess.run([ffprobe, "-v", "error", "-show_entries",
+                                "stream=codec_type:format=duration", "-of", "json", str(source)],
+                               capture_output=True, text=True, timeout=20)
+        details = json.loads(probe.stdout) if probe.returncode == 0 else {}
+        streams = details.get("streams") or []
+        duration = float(details.get("format", {}).get("duration", "nan"))
+        if not any(stream.get("codec_type") == "video" for stream in streams) or not math.isfinite(duration):
+            raise ValueError("No decodable video stream")
+        source_end = max(float(clip["source_end"]) for clip in timeline["tracks"]["video"]
+                         if clip.get("source_end") is not None)
+        if duration + 0.05 < source_end:
+            raise ValueError("Video is shorter than the transcript's last timecode")
+        has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        source.unlink(missing_ok=True)
+        raise HTTPException(422, f"Invalid source video: {error}") from error
+    previous_video = timeline.get("source_video_path")
+    for index, clip in enumerate(timeline["tracks"]["video"]):
+        if clip.get("source_start") is None or clip.get("source_end") is None:
+            continue
+        clip["video_path"] = f"video/{source.name}"
+        clip["video_offset"] = float(clip["source_start"])
+        clip["media_path"] = None
+        clip["placeholder"] = False
+        voice = timeline["tracks"]["narration"][index]
+        if voice.get("audio_path") == previous_video and not has_audio:
+            voice["audio_path"] = None
+            voice["source_audio"] = False
+            voice["placeholder"] = True
+        elif has_audio and (not voice.get("audio_path") or voice.get("audio_path") == previous_video):
+            voice["audio_path"] = f"video/{source.name}"
+            voice["audio_offset"] = float(voice["source_start"])
+            voice["source_audio"] = True
+            voice["placeholder"] = False
+    timeline["source_video_path"] = f"video/{source.name}"
+    timeline["revision"] = int(timeline.get("revision") or 1) + 1
+    preview_url = None
+    if render:
+        try:
+            render_preview(timeline, directory, ffmpeg=ffmpeg)
+        except RuntimeError as error:
+            source.unlink(missing_ok=True)
+            raise HTTPException(503, str(error)) from error
+        preview_url = f"/api/studio/episodes/{episode_id}/preview"
+    else:
+        (directory / "preview.mp4").unlink(missing_ok=True)
+    save_timeline(timeline, directory)
+    return {"timeline": timeline, "preview_url": preview_url}
 
 
 @router.post("/episodes/{episode_id}/shots/{shot_id}/synthesize-narration")

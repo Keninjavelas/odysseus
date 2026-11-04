@@ -44,8 +44,10 @@ product experience described later in the roadmap is complete.
   cut with cue source timecodes and editable pause shots; preview rendering can
   be requested separately. This import currently accepts up to 60 shots and
   five minutes. The original interview audio can be attached once and played
-  from the matching source ranges, including pauses. Original interview video
-  import and transcription are still pending.
+  from the matching source ranges, including pauses. An MP4, MOV, WebM, or MKV
+  interview can also be attached to cut moving source video by cue timecode;
+  its audio fills shots without a separate voice track. Original media stays
+  owner-private. Local transcription and background rendering are still pending.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
@@ -79,8 +81,8 @@ product experience described later in the roadmap is complete.
 
 ### Premiere-style editing and Understanding Studio
 
-- **Transcript-first rough cut:** timed SRT import and source-audio playback are
-  built. Next, ingest interview video, transcribe locally, and select sentences
+- **Transcript-first rough cut:** timed SRT import and original audio/video cuts
+  are built. Next, transcribe locally and select sentences
   to cut the original media with corresponding source timecodes.
 - **Evidence-aware documentary:** each narration claim points to its source
   document and time range; unsupported claims are flagged before rendering.

@@ -112,6 +112,9 @@
           <p>Attach the original interview audio to the timed transcript. Each shot plays its matching source range.</p>
           <input id="source-audio-file" type="file" accept=".wav,.mp3,.m4a,.ogg,.flac" aria-label="Interview source audio">
           <button id="upload-source-audio" type="button">Use source audio</button>
+          <p>Attach the original interview video to cut the matching source ranges. If it has audio, that audio fills shots without a separate narration track.</p>
+          <input id="source-video-file" type="file" accept=".mp4,.mov,.webm,.mkv" aria-label="Interview source video">
+          <button id="upload-source-video" type="button">Use source video</button>
         </div>
         <video id="episode-video" controls hidden></video>
         <p><a id="timeline-download" download="timeline.json">Download editable timeline JSON</a></p>

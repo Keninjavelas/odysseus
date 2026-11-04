@@ -252,6 +252,63 @@ def test_generate_narration_updates_audio_and_captions(tmp_path, monkeypatch):
     assert stale.value.status_code == 409
 
 
+def test_srt_source_video_renders_moving_interview_with_audio(tmp_path, monkeypatch):
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    if not ffmpeg or not ffprobe:
+        pytest.skip("FFmpeg and FFprobe are required")
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    alice = SimpleNamespace(owner="alice")
+    srt = ("1\n00:00:00,000 --> 00:00:01,000\nFirst line\n\n"
+           "2\n00:00:01,500 --> 00:00:02,500\nSecond line\n")
+    created = studio_routes.create_episode_from_srt(
+        alice, "Interview", UploadFile(file=io.BytesIO(srt.encode()), filename="source.srt"), False)
+    episode_id = created["timeline"]["episode_id"]
+    source = tmp_path / "interview.mp4"
+    subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "testsrc=size=320x180:rate=12",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
+                    "-t", "3", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(source)], check=True, capture_output=True)
+    with source.open("rb") as file:
+        attached = studio_routes.upload_episode_source_video(
+            alice, episode_id, UploadFile(file=file, filename="interview.mp4"),
+            expected_revision=1, render=False)
+    assert attached["preview_url"] is None
+    assert attached["timeline"]["tracks"]["video"][0]["video_offset"] == 0
+    assert attached["timeline"]["tracks"]["video"][2]["video_offset"] == 1.5
+    assert attached["timeline"]["tracks"]["narration"][0]["source_audio"] is True
+    rendered = studio_routes.render_episode(
+        alice, episode_id, studio_routes.RenderRequest(expected_revision=2))
+    preview = studio_routes.get_preview(alice, episode_id).path
+    assert rendered["preview_url"] and preview.stat().st_size > 1000
+    probe = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
+                            "-of", "json", str(preview)], capture_output=True, text=True, check=True)
+    assert abs(float(json.loads(probe.stdout)["format"]["duration"]) - 2.5) < 0.2
+    frames = []
+    for position in ("0.3", "0.8"):
+        frames.append(subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error",
+                                      "-ss", position, "-i", str(preview), "-frames:v", "1",
+                                      "-f", "image2pipe", "-vcodec", "png", "-"],
+                                     check=True, capture_output=True).stdout)
+    assert frames[0] != frames[1]
+    decoded = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error",
+                              "-i", str(preview), "-vn", "-t", "0.2", "-ac", "1",
+                              "-ar", "16000", "-f", "s16le", "-"],
+                             capture_output=True, check=True).stdout
+    assert any(sample[0] != 0 for sample in struct.iter_unpack("<h", decoded))
+    from PIL import Image
+    still = io.BytesIO()
+    Image.new("RGB", (320, 180), (10, 120, 200)).save(still, format="PNG")
+    still.seek(0)
+    mixed = studio_routes.upload_shot_still(
+        alice, episode_id, "shot-001", UploadFile(file=still, filename="cover.png"),
+        expected_revision=2)
+    assert mixed["timeline"]["tracks"]["video"][0]["video_path"] is None
+    assert mixed["timeline"]["tracks"]["video"][2]["video_path"]
+    assert studio_routes.get_preview(alice, episode_id).path.is_file()
+
+
 def test_generate_narration_requires_server_provider(tmp_path, monkeypatch):
     from services.tts import tts_service
 

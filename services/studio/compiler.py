@@ -260,28 +260,89 @@ def _draw_card(title: str, beat: str, destination: Path, number: int,
     frame.save(destination)
 
 
+def _render_video_segments(timeline: dict, directory: Path, ffmpeg: str) -> tuple[Path, list[Path]]:
+    """Normalize mixed source-video and still shots to concatenable MP4 segments."""
+    concat_file = directory / "video.ffconcat"
+    concat_file.unlink(missing_ok=True)
+    lines = ["ffconcat version 1.0"]
+    segments = []
+    try:
+        for index, clip in enumerate(timeline["tracks"]["video"], start=1):
+            duration = float(clip["duration"])
+            segment = directory / f"video-segment-{index:03d}.mp4"
+            segments.append(segment)
+            command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+            if clip.get("video_path"):
+                relative = Path(clip["video_path"])
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise RuntimeError("Shot video path is invalid")
+                source = directory / relative
+                if not source.is_file():
+                    raise RuntimeError(f"Shot {index} video is missing")
+                offset = float(clip.get("video_offset") or 0)
+                source_length = duration
+                if clip.get("source_end") is not None:
+                    source_length = min(duration, float(clip["source_end"]) - offset)
+                if source_length <= 0:
+                    raise RuntimeError(f"Shot {index} video source range is invalid")
+                command.extend(["-ss", str(offset), "-t", str(source_length), "-i", str(source)])
+            else:
+                frame = directory / f"shot-{index:03d}.png"
+                media_path = None
+                if clip.get("media_path"):
+                    relative = Path(clip["media_path"])
+                    if relative.is_absolute() or ".." in relative.parts:
+                        raise RuntimeError("Shot image path is invalid")
+                    media_path = directory / relative
+                _draw_card(clip["title"], clip["visual_prompt"], frame, index, media_path)
+                command.extend(["-loop", "1", "-framerate", "12", "-i", str(frame)])
+            video_filter = ("scale=960:540:force_original_aspect_ratio=decrease,"
+                            "pad=960:540:(ow-iw)/2:(oh-ih)/2,fps=12,"
+                            f"tpad=stop_mode=clone:stop_duration={duration},"
+                            f"trim=duration={duration},setpts=PTS-STARTPTS,format=yuv420p")
+            command.extend(["-vf", video_filter, "-an", "-t", str(duration),
+                            "-c:v", "libx264", "-preset", "ultrafast", "-r", "12",
+                            str(segment)])
+            subprocess.run(command, cwd=directory, check=True, capture_output=True,
+                           text=True, timeout=180)
+            lines.append(f"file {segment.name}")
+        concat_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return concat_file, segments
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        raise RuntimeError(f"FFmpeg video segment failed: {detail[-600:]}") from error
+    finally:
+        if not concat_file.is_file():
+            for segment in segments:
+                segment.unlink(missing_ok=True)
+
+
 def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None) -> Path:
     """Render shot cards or stills with per-shot narration; requires no GPU."""
     ffmpeg = ffmpeg or shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("FFmpeg is required for storyboard preview rendering")
     directory.mkdir(parents=True, exist_ok=True)
-    concat_file = directory / "frames.ffconcat"
-    lines = ["ffconcat version 1.0"]
     clips = timeline["tracks"]["video"]
-    for index, clip in enumerate(clips, start=1):
-        frame_name = f"shot-{index:03d}.png"
-        media_path = None
-        if clip.get("media_path"):
-            relative = Path(clip["media_path"])
-            if relative.is_absolute() or ".." in relative.parts:
-                raise RuntimeError("Shot image path is invalid")
-            media_path = directory / relative
-        _draw_card(clip["title"], clip["visual_prompt"], directory / frame_name,
-                   index, media_path)
-        lines.extend((f"file {frame_name}", f"duration {clip['duration']}"))
-    lines.append(f"file shot-{len(clips):03d}.png")
-    concat_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    video_segments = []
+    if any(clip.get("video_path") for clip in clips):
+        concat_file, video_segments = _render_video_segments(timeline, directory, ffmpeg)
+    else:
+        concat_file = directory / "frames.ffconcat"
+        lines = ["ffconcat version 1.0"]
+        for index, clip in enumerate(clips, start=1):
+            frame_name = f"shot-{index:03d}.png"
+            media_path = None
+            if clip.get("media_path"):
+                relative = Path(clip["media_path"])
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise RuntimeError("Shot image path is invalid")
+                media_path = directory / relative
+            _draw_card(clip["title"], clip["visual_prompt"], directory / frame_name,
+                       index, media_path)
+            lines.extend((f"file {frame_name}", f"duration {clip['duration']}"))
+        lines.append(f"file shot-{len(clips):03d}.png")
+        concat_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     captions_file = write_subtitles(timeline, directory)
     audio_concat = directory / "audio.ffconcat"
     audio_lines = ["ffconcat version 1.0"]
@@ -320,6 +381,8 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         for segment in audio_segments:
             segment.unlink(missing_ok=True)
+        for segment in video_segments:
+            segment.unlink(missing_ok=True)
         detail = getattr(error, "stderr", "") or str(error)
         raise RuntimeError(f"FFmpeg narration failed: {detail[-600:]}") from error
     output = directory / "preview.mp4"
@@ -344,5 +407,7 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
         raise RuntimeError(f"FFmpeg preview failed: {detail[-600:]}") from error
     finally:
         for segment in audio_segments:
+            segment.unlink(missing_ok=True)
+        for segment in video_segments:
             segment.unlink(missing_ok=True)
     return output

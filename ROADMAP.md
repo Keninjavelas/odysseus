@@ -203,9 +203,11 @@ Remaining pro gap (polish, not a rebuild):
 ### 2. Documentary compiler (formerly "Understanding Studio") — dry-run foundation built
 The current `/lab` workflow turns explicit outline beats into an editable
 three-lane timeline and a GPU-free MP4 storyboard preview. Users can attach
-local stills and narration audio to shots; captions export as SRT and as a
-selectable MP4 subtitle track. It does not yet
-research a topic or synthesize narration. Target production architecture:
+local stills and narration audio to shots, or generate shot narration with the
+configured server TTS provider. Timed SRT import can attach original audio and
+video as editable source-range cuts. Captions export as SRT and as a selectable
+MP4 subtitle track. It does not yet research a topic or transcribe media.
+Target production architecture:
 
 - **Screenplay / shot expansion** — LLM expands the outline into an ordered
   shot list (target ≈60 shots / ~8 min) validated by strict Pydantic schemas so
@@ -245,8 +247,8 @@ research a topic or synthesize narration. Target production architecture:
 
 ### 3. Video editor / NLE ("Premiere-style") — timeline foundation built
 The compiler emits an editable JSON timeline; `/lab` can change shot text,
-duration, and order, split or delete shots with ripple timing, and regenerate
-a preview. The target NLE delegates pixel
+duration, and order, split or delete shots with ripple timing, attach source
+media by timecode, and regenerate a preview. The target NLE delegates pixel
 and audio work to background FFmpeg jobs so exports stay editable.
 - Multi-track timeline (video + audio), clip trim / split / ripple, transitions.
 - Keyframeable transforms + the same camera-motion vocabulary the compiler uses

@@ -257,6 +257,7 @@
     timeline.tracks.video.forEach((shot, index) => {
       const card = node('article', undefined, 'card');
       card.append(node('h3', `Shot ${index + 1}`));
+      if (shot.video_path) card.append(node('small', `Source video ${shot.source_start}s–${shot.source_end}s`));
       if (shot.media_path) {
         const image = node('img');
         image.src = `/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/still`;
@@ -421,6 +422,19 @@
                              { method: 'POST', body });
     showEpisode(result.timeline, result.preview_url);
     await loadEpisodes();
+  }));
+  $('upload-source-video').addEventListener('click', () => run(async () => {
+    const timeline = state.episode;
+    const file = $('source-video-file').files[0];
+    if (!timeline || !file) throw new Error('Open an SRT rough cut and choose its source video first.');
+    const body = new FormData();
+    body.append('video', file);
+    body.append('expected_revision', String(timeline.revision));
+    const result = await api(`/api/studio/episodes/${timeline.episode_id}/source-video`,
+                             { method: 'POST', body });
+    showEpisode(result.timeline, result.preview_url);
+    await loadEpisodes();
+    return 'Source video attached. Render the MP4 preview when ready.';
   }));
 
   Promise.all([loadProjects(), loadActions(), loadCases(), loadEpisodes()]).catch((error) => notice(error.message || 'Could not load lab.'));
