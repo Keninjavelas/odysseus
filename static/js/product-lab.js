@@ -182,7 +182,7 @@
     state.episode = timeline;
     $('episode-result').hidden = false;
     $('episode-title').textContent = timeline.title;
-    $('episode-meta').textContent = `${timeline.tracks.video.length} shots · ${timeline.duration} seconds · ${timeline.render_mode}`;
+    $('episode-meta').textContent = `${timeline.tracks.video.length} shots · ${timeline.duration} seconds · revision ${timeline.revision} · ${timeline.render_mode}`;
     $('timeline-download').href = `/api/studio/episodes/${timeline.episode_id}/timeline`;
     $('captions-download').href = `/api/studio/episodes/${timeline.episode_id}/captions.srt`;
     const video = $('episode-video'); video.hidden = !previewUrl;
@@ -210,6 +210,7 @@
       upload.addEventListener('click', () => run(async () => {
         if (!fileInput.files.length) throw new Error('Choose an image first.');
         const body = new FormData(); body.append('image', fileInput.files[0]);
+        body.append('expected_revision', String(timeline.revision));
         const result = await api(`/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/still`,
                                  { method: 'POST', body });
         showEpisode(result.timeline, result.preview_url);
@@ -228,6 +229,7 @@
       uploadAudio.addEventListener('click', () => run(async () => {
         if (!audioInput.files.length) throw new Error('Choose an audio file first.');
         const body = new FormData(); body.append('audio', audioInput.files[0]);
+        body.append('expected_revision', String(timeline.revision));
         const result = await api(`/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/narration`,
                                  { method: 'POST', body });
         showEpisode(result.timeline, result.preview_url);
@@ -239,6 +241,7 @@
           action: 'set_shot', shot_id: shot.id, title: title.value,
           visual_prompt: prompt.value, narration_text: narration.value,
           duration: Number(duration.value), render_preview: true,
+          expected_revision: timeline.revision,
         }));
         showEpisode(result.timeline, result.preview_url);
       }));
@@ -249,6 +252,7 @@
           const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {
             action: 'split_shot', shot_id: shot.id,
             at_seconds: Math.max(1, Math.floor(shot.duration / 2)), render_preview: true,
+            expected_revision: timeline.revision,
           }));
           showEpisode(result.timeline, result.preview_url);
         }));
@@ -260,6 +264,7 @@
           if (!window.confirm('Delete this shot and close the gap?')) return;
           const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {
             action: 'delete_shot', shot_id: shot.id, render_preview: true,
+            expected_revision: timeline.revision,
           }));
           showEpisode(result.timeline, result.preview_url);
         }));
@@ -270,6 +275,7 @@
         up.addEventListener('click', () => run(async () => {
           const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {
             action: 'move_shot', shot_id: shot.id, index: index - 1, render_preview: true,
+            expected_revision: timeline.revision,
           }));
           showEpisode(result.timeline, result.preview_url);
         }));

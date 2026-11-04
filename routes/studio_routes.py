@@ -9,7 +9,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -38,6 +38,7 @@ class TimelineEdit(BaseModel):
     duration: float | None = None
     at_seconds: float | None = None
     render_preview: bool = False
+    expected_revision: int | None = None
 
 
 def _owner_dir(owner: str | None) -> Path:
@@ -84,6 +85,8 @@ def update_timeline(request: Request, episode_id: str, edit: TimelineEdit):
     if not destination.is_file():
         raise HTTPException(404, "Episode not found")
     timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if edit.expected_revision is not None and edit.expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before editing")
     try:
         timeline = edit_storyboard(timeline, edit.model_dump(exclude_none=True))
     except ValueError as error:
@@ -103,7 +106,8 @@ def update_timeline(request: Request, episode_id: str, edit: TimelineEdit):
 
 @router.post("/episodes/{episode_id}/shots/{shot_id}/still")
 def upload_shot_still(request: Request, episode_id: str, shot_id: str,
-                      image: UploadFile = File(...)):
+                      image: UploadFile = File(...),
+                      expected_revision: int | None = Form(None)):
     """Attach a local still to one shot and refresh the GPU-free preview."""
     from PIL import Image, UnidentifiedImageError
 
@@ -112,6 +116,8 @@ def upload_shot_still(request: Request, episode_id: str, shot_id: str,
     if not destination.is_file():
         raise HTTPException(404, "Episode not found")
     timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if expected_revision is not None and expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before uploading")
     shot = next((clip for clip in timeline["tracks"]["video"] if clip["id"] == shot_id), None)
     if shot is None:
         raise HTTPException(404, "Shot not found")
@@ -131,6 +137,7 @@ def upload_shot_still(request: Request, episode_id: str, shot_id: str,
     frame.save(assets / filename, format="JPEG", quality=92)
     shot["media_path"] = f"assets/{filename}"
     shot["placeholder"] = False
+    timeline["revision"] = int(timeline.get("revision") or 1) + 1
     try:
         render_preview(timeline, directory)
     except RuntimeError as error:
@@ -162,12 +169,15 @@ def get_shot_still(request: Request, episode_id: str, shot_id: str):
 
 @router.post("/episodes/{episode_id}/shots/{shot_id}/narration")
 def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
-                          audio: UploadFile = File(...)):
+                          audio: UploadFile = File(...),
+                          expected_revision: int | None = Form(None)):
     directory = _episode_dir(effective_user(request), episode_id)
     destination = directory / "timeline.json"
     if not destination.is_file():
         raise HTTPException(404, "Episode not found")
     timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if expected_revision is not None and expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before uploading")
     clip = next((item for item in timeline["tracks"]["narration"] if item["id"] == shot_id), None)
     if clip is None:
         raise HTTPException(404, "Shot not found")
@@ -199,6 +209,7 @@ def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
     clip["audio_path"] = f"audio/{filename}"
     clip["audio_offset"] = 0.0
     clip["placeholder"] = False
+    timeline["revision"] = int(timeline.get("revision") or 1) + 1
     try:
         render_preview(timeline, directory, ffmpeg=ffmpeg)
     except RuntimeError as error:

@@ -32,7 +32,9 @@ product experience described later in the roadmap is complete.
   regenerate the MP4 preview. Local PNG, JPEG, and WebP stills can be attached
   to shots, and local narration audio can be attached to the corresponding
   audio lane and mixed into the preview. The caption lane exports as SRT and
-  is embedded as a selectable subtitle track in the MP4.
+  is embedded as a selectable subtitle track in the MP4. Timeline edits use
+  revision checks so a stale browser tab receives a conflict instead of
+  overwriting a newer edit.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 

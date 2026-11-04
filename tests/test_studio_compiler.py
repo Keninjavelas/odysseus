@@ -82,8 +82,14 @@ def test_episode_api_keeps_each_owners_timeline_private(tmp_path, monkeypatch):
     episode_id = created["timeline"]["episode_id"]
     edited = studio_routes.update_timeline(
         alice, episode_id, studio_routes.TimelineEdit(
-            action="set_shot", shot_id="shot-001", duration=8))
+            action="set_shot", shot_id="shot-001", duration=8, expected_revision=1))
     assert edited["timeline"]["duration"] == 8
+    assert edited["timeline"]["revision"] == 2
+    with pytest.raises(HTTPException) as stale:
+        studio_routes.update_timeline(
+            alice, episode_id, studio_routes.TimelineEdit(
+                action="set_shot", shot_id="shot-001", duration=4, expected_revision=1))
+    assert stale.value.status_code == 409
     assert studio_routes.get_timeline(alice, episode_id).path.name == "timeline.json"
     assert studio_routes.get_captions(alice, episode_id).path.name == "captions.srt"
     with pytest.raises(HTTPException) as denied:
@@ -107,7 +113,8 @@ def test_still_upload_renders_real_image_and_keeps_owner_boundary(tmp_path, monk
     Image.new("RGB", (320, 180), (10, 120, 200)).save(source, format="PNG")
     source.seek(0)
     result = studio_routes.upload_shot_still(
-        alice, episode_id, "shot-001", UploadFile(file=source, filename="ocean.png"))
+        alice, episode_id, "shot-001", UploadFile(file=source, filename="ocean.png"),
+        expected_revision=1)
     assert result["timeline"]["tracks"]["video"][0]["placeholder"] is False
     assert studio_routes.get_preview(alice, episode_id).path.is_file()
     assert studio_routes.get_shot_still(alice, episode_id, "shot-001").path.is_file()
@@ -133,7 +140,8 @@ def test_narration_upload_mixes_audio_into_preview(tmp_path, monkeypatch):
                                  for t in range(4000)))
     source.seek(0)
     result = studio_routes.upload_shot_narration(
-        alice, episode_id, "shot-001", UploadFile(file=source, filename="voice.wav"))
+        alice, episode_id, "shot-001", UploadFile(file=source, filename="voice.wav"),
+        expected_revision=1)
     assert result["timeline"]["tracks"]["narration"][0]["placeholder"] is False
     preview = studio_routes.get_preview(alice, episode_id).path
     assert preview.stat().st_size > 1000

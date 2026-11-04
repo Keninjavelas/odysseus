@@ -40,6 +40,7 @@ def compile_storyboard(title: str, outline: str, *, episode_id: str | None = Non
         cursor += duration
     return {
         "schema_version": "1.0",
+        "revision": 1,
         "episode_id": episode_id or str(uuid.uuid4()),
         "title": title,
         "duration": cursor,
@@ -152,6 +153,7 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
             track[offset]["duration"] = duration
         cursor += duration
     timeline["duration"] = cursor
+    timeline["revision"] = int(timeline.get("revision") or 1) + 1
     return timeline
 
 
