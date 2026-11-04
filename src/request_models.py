@@ -153,6 +153,7 @@ class SessionResponse(BaseModel):
     rag: bool = Field(default=False, description="RAG enabled")
     archived: bool = Field(default=False, description="Whether session is archived")
     cwd: Optional[str] = Field(default=None, description="Persisted workspace cwd")
+    project_id: Optional[str] = Field(default=None, description="Project containing this session")
 
 
 class MemoryResponse(BaseModel):

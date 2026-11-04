@@ -765,6 +765,12 @@ app.include_router(setup_session_routes(
     upload_handler=upload_handler,
     skills_manager=skills_manager,
 ))
+from routes.project_routes import router as project_router
+app.include_router(project_router)
+from routes.studio_routes import router as studio_router
+app.include_router(studio_router)
+from routes.eval_routes import router as eval_router
+app.include_router(eval_router)
 
 # Admin Danger Zone wipes (Settings → System → Danger Zone)
 from routes.admin_wipe.admin_wipe_routes import setup_admin_wipe_routes

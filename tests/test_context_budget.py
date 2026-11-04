@@ -10,6 +10,7 @@ from src.context_budget import (
     bound_trim_reserve,
     compute_input_token_budget,
     compute_trim_context_window,
+    profile_context_window,
 )
 
 
@@ -17,6 +18,13 @@ def test_trim_reserve_cannot_consume_small_effective_budget():
     assert bound_trim_reserve(1638, 2048) == 819
     assert bound_trim_reserve(100, 2048) == 50
     assert bound_trim_reserve(4096, 512) == 512
+
+
+def test_small_model_profiles_cap_known_windows_and_bound_unknown_windows():
+    assert profile_context_window(128000, "4k") == 4096
+    assert profile_context_window(4096, "16k") == 4096
+    assert profile_context_window(0, "8k") == 8192
+    assert profile_context_window(128000, "auto") == 128000
 
 
 def test_trim_window_adds_response_reserve_to_input_budget_once():

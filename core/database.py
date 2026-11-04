@@ -257,6 +257,7 @@ class Session(TimestampMixin, Base):
     # Organization
     folder = Column(String, nullable=True, default=None)
     cwd = Column(String, nullable=True, default=None)
+    project_id = Column(String, nullable=True, index=True)
     # Registered ModelEndpoint this session is bound to. endpoint_url alone
     # cannot distinguish two endpoints that share a provider URL but use
     # different credentials (e.g. two ChatGPT Subscription accounts), so the
@@ -312,6 +313,7 @@ class Session(TimestampMixin, Base):
             'name': self.name,
             'model': self.model,
             'endpoint_url': self.endpoint_url,
+            'project_id': self.project_id,
             'rag': self.rag,
             'archived': self.archived,
             'memory_extraction_enabled': self.memory_extraction_enabled is not False,
@@ -332,6 +334,45 @@ class Session(TimestampMixin, Base):
             'total_cost_usd': self.total_cost_usd or 0.0,
             'crew_member_id': self.crew_member_id,
         }
+
+class Project(TimestampMixin, Base):
+    """Owner-scoped container for related sessions and later project assets."""
+
+    __tablename__ = "projects"
+
+    id = Column(String, primary_key=True)
+    owner = Column(String, nullable=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=False, default="")
+
+
+class EvaluationCase(TimestampMixin, Base):
+    """A reusable prompt and objective trace checks for model evaluation."""
+
+    __tablename__ = "evaluation_cases"
+
+    id = Column(String, primary_key=True)
+    owner = Column(String, nullable=True, index=True)
+    name = Column(String, nullable=False)
+    prompt = Column(Text, nullable=False)
+    expected_tools = Column(JSON, nullable=False, default=list)
+    forbidden_tools = Column(JSON, nullable=False, default=list)
+    required_text = Column(String, nullable=False, default="")
+
+
+class EvaluationRun(TimestampMixin, Base):
+    """A stored trace and replay grade for one evaluation case."""
+
+    __tablename__ = "evaluation_runs"
+
+    id = Column(String, primary_key=True)
+    owner = Column(String, nullable=True, index=True)
+    case_id = Column(String, nullable=False, index=True)
+    model_label = Column(String, nullable=False, default="")
+    response_text = Column(Text, nullable=False, default="")
+    trace_json = Column(JSON, nullable=False)
+    grade_json = Column(JSON, nullable=False)
+
 
 class ChatMessage(Base):
     """
@@ -1878,6 +1919,19 @@ def _migrate_add_session_endpoint_id_column():
         index.create(bind=connection, checkfirst=True)
 
 
+def _migrate_add_session_project_id_column():
+    """Add project assignment to existing databases on SQLite and Postgres."""
+    with engine.begin() as connection:
+        schema = inspect(connection)
+        if not schema.has_table("sessions"):
+            return
+        columns = {column["name"] for column in schema.get_columns("sessions")}
+        if "project_id" not in columns:
+            connection.execute(text("ALTER TABLE sessions ADD COLUMN project_id VARCHAR"))
+        index = next(index for index in Session.__table__.indexes if index.name == "ix_sessions_project_id")
+        index.create(bind=connection, checkfirst=True)
+
+
 def _migrate_add_token_columns():
     """Add cumulative token tracking columns to sessions table."""
     import sqlite3
@@ -2800,6 +2854,7 @@ def init_db():
     _migrate_add_folder_column()
     _migrate_add_session_cwd_column()
     _migrate_add_session_endpoint_id_column()
+    _migrate_add_session_project_id_column()
     _migrate_add_token_columns()
     _migrate_add_total_cost_usd()
     _migrate_add_mode_column()

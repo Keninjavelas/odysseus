@@ -140,6 +140,17 @@ TIER_SMALL_MAX = 4096
 TIER_TIGHT_MAX = 8192
 TIER_LARGE_MIN = 32768
 
+CONTEXT_PROFILES = {"4k": 4096, "8k": 8192, "16k": 16384}
+
+
+def profile_context_window(context_length: int, profile: str = "auto") -> int:
+    """Apply an optional small-model ceiling without exceeding a known window."""
+    discovered = max(0, _int_or_zero(context_length))
+    cap = CONTEXT_PROFILES.get(str(profile or "auto").strip().lower())
+    if cap is None:
+        return discovered
+    return min(discovered, cap) if discovered else cap
+
 
 def compute_tool_retrieval_k(context_length: int, *, default: int = TIER_DEFAULT_K) -> int:
     """Return how many tools vector retrieval should surface for a given window.

@@ -12,7 +12,7 @@ import logging
 from core.session_manager import SessionManager
 from core.models import ChatMessage
 from src.request_models import SessionResponse
-from core.database import Session as DbSession, SessionLocal, Document, GalleryImage, utcnow_naive
+from core.database import Session as DbSession, SessionLocal, Document, GalleryImage, Project, utcnow_naive
 from src.auth_helpers import (
     effective_user,
     _auth_disabled,
@@ -436,6 +436,16 @@ def setup_session_routes(
                 .order_by(DbSession.is_important.desc(), DbSession.updated_at.desc())
             )
             q = owner_filter(q, DbSession, user)
+            if "project_id" in request.query_params:
+                requested_project = str(request.query_params["project_id"] or "").strip()
+                if requested_project:
+                    owned_project = db.query(Project).filter(
+                        Project.id == requested_project, Project.owner == user).first()
+                    if owned_project is None:
+                        raise HTTPException(404, "Project not found")
+                    q = q.filter(DbSession.project_id == requested_project)
+                else:
+                    q = q.filter(DbSession.project_id == None)  # noqa: E711
             rows = [
                 row for row in q.all()
                 if not _is_hidden_session_name(row.name)
@@ -500,6 +510,7 @@ def setup_session_routes(
                     "archived": s.archived,
                     "folder": s.folder,
                     "cwd": s.cwd,
+                    "project_id": s.project_id,
                     "total_tokens": (s.total_input_tokens or 0) + (s.total_output_tokens or 0),
                     "total_cost_usd": s.total_cost_usd or 0.0,
                     "is_important": s.is_important or False,
@@ -528,9 +539,19 @@ def setup_session_routes(
         api_key: str = Form(""),
         endpoint_id: str = Form(""),
         cwd: str = Form(None),
+        project_id: str = Form(""),
     ):
         skip_val = str(skip_validation).lower() == "true"
         user = effective_user(request)
+        project_id = project_id.strip()
+        if project_id:
+            _project_db = SessionLocal()
+            try:
+                if _project_db.query(Project).filter(
+                    Project.id == project_id, Project.owner == user).first() is None:
+                    raise HTTPException(404, "Project not found")
+            finally:
+                _project_db.close()
         _reject_delegated_session_options(
             request,
             skip_validation=skip_val,
@@ -631,6 +652,16 @@ def setup_session_routes(
             cwd=cwd or None,
             endpoint_id=endpoint_id.strip() if endpoint_id else None,
         )
+        if project_id:
+            _project_db = SessionLocal()
+            try:
+                row = _project_db.query(DbSession).filter(
+                    DbSession.id == sid, DbSession.owner == user).first()
+                if row is not None:
+                    row.project_id = project_id
+                    _project_db.commit()
+            finally:
+                _project_db.close()
         # Set auth headers for custom API-key endpoints
         resolved_key = request_api_key
         resolved_base = endpoint_url
@@ -657,6 +688,7 @@ def setup_session_routes(
             rag=str(rag).lower() == "true" if rag else False,
             archived=False,
             cwd=session.cwd,
+            project_id=project_id or None,
         )    
     @router.patch("/session/{sid}")
     def rename_session(

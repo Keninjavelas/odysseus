@@ -131,6 +131,9 @@ DEFAULT_SETTINGS = {
     # defaults, so a persisted 6000 can't be told apart from a deliberate 6000 —
     # to pin a budget near the default, use a nearby value (e.g. 5999).
     "agent_input_token_budget": 6000,
+    # Optional model-context ceiling for constrained local inference. A
+    # discovered smaller window always wins. "auto" retains normal detection.
+    "agent_context_profile": "auto",  # auto | 4k | 8k | 16k
     # Ceiling on the *auto-derived* input budget; a configurable setting since #1273
     # (the merged #1230 left it a module constant). No effect on an explicit budget
     # — a deliberate value is honoured (#1230). Default matches

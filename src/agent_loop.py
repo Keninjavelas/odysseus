@@ -21407,6 +21407,9 @@ async def stream_agent_loop(
     """
 
     # Caller and credential denials remain absolute across contract routing.
+    from src.context_budget import profile_context_window
+    _context_profile = str(get_setting("agent_context_profile", "auto") or "auto")
+    context_length = profile_context_window(context_length, _context_profile)
     disabled_tools = set(disabled_tools or ())
     if delegated_credential:
         disabled_tools.update(delegated_credential_blocked_tools())
@@ -24280,6 +24283,7 @@ async def stream_agent_loop(
                 DEFAULT_BUDGET,
                 DEFAULT_HARD_MAX,
                 budget_is_explicit as _budget_is_explicit,
+                profile_context_window,
             )
             from src.model_context import budget_context_for_model
 
@@ -24304,6 +24308,7 @@ async def stream_agent_loop(
                     if candidate_context > 0
                     else runtime_context_window
                 )
+            candidate_context = profile_context_window(candidate_context, _context_profile)
             _route_context_lengths[(candidate_url, candidate_model)] = candidate_context
             soft_budget = int(get_setting("agent_input_token_budget", DEFAULT_BUDGET) or 0)
             if soft_budget <= 0:
