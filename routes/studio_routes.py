@@ -70,6 +70,32 @@ def create_episode(request: Request, payload: EpisodeInput):
     return {"timeline": timeline, "preview_url": preview_url}
 
 
+@router.get("/episodes")
+def list_episodes(request: Request):
+    owner_dir = _owner_dir(effective_user(request))
+    if not owner_dir.is_dir():
+        return []
+    result = []
+    for directory in owner_dir.iterdir():
+        if not directory.is_dir() or not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", directory.name):
+            continue
+        path = directory / "timeline.json"
+        if not path.is_file():
+            continue
+        try:
+            timeline = json.loads(path.read_text(encoding="utf-8"))
+            result.append({"id": directory.name, "title": timeline["title"],
+                           "duration": timeline["duration"],
+                           "shot_count": len(timeline["tracks"]["video"]),
+                           "revision": timeline.get("revision", 1),
+                           "has_preview": (directory / "preview.mp4").is_file(),
+                           "updated_at": path.stat().st_mtime})
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return sorted(result, key=lambda item: item["updated_at"], reverse=True)[:100]
+
+
 @router.get("/episodes/{episode_id}/timeline")
 def get_timeline(request: Request, episode_id: str):
     destination = _episode_dir(effective_user(request), episode_id) / "timeline.json"

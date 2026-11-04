@@ -284,6 +284,24 @@
       card.append(actions); list.append(card);
     });
   }
+  async function loadEpisodes() {
+    const episodes = await api('/api/studio/episodes');
+    const list = $('episode-list'); list.replaceChildren();
+    if (!episodes.length) list.append(node('p', 'No saved episodes yet.'));
+    for (const episode of episodes) {
+      const card = node('article', undefined, 'card');
+      card.append(node('h3', episode.title),
+                  node('small', `${episode.shot_count} shots · ${episode.duration} seconds · revision ${episode.revision}`));
+      const open = node('button', 'Open timeline');
+      open.addEventListener('click', () => run(async () => {
+        const timeline = await api(`/api/studio/episodes/${episode.id}/timeline`);
+        showEpisode(timeline, episode.has_preview ? `/api/studio/episodes/${episode.id}/preview` : null);
+      }));
+      card.append(node('div', undefined, 'card-actions'));
+      card.lastChild.append(open);
+      list.append(card);
+    }
+  }
   $('episode-form').addEventListener('submit', (event) => {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -294,8 +312,9 @@
         render_preview: form.has('render_preview'),
       }));
       showEpisode(result.timeline, result.preview_url);
+      await loadEpisodes();
     });
   });
 
-  Promise.all([loadProjects(), loadActions(), loadCases()]).catch((error) => notice(error.message || 'Could not load lab.'));
+  Promise.all([loadProjects(), loadActions(), loadCases(), loadEpisodes()]).catch((error) => notice(error.message || 'Could not load lab.'));
 })();

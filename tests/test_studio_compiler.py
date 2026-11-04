@@ -80,6 +80,8 @@ def test_episode_api_keeps_each_owners_timeline_private(tmp_path, monkeypatch):
     created = studio_routes.create_episode(
         alice, studio_routes.EpisodeInput(title="Ocean", outline="First beat", render_preview=False))
     episode_id = created["timeline"]["episode_id"]
+    assert studio_routes.list_episodes(alice)[0]["id"] == episode_id
+    assert studio_routes.list_episodes(bob) == []
     edited = studio_routes.update_timeline(
         alice, episode_id, studio_routes.TimelineEdit(
             action="set_shot", shot_id="shot-001", duration=8, expected_revision=1))

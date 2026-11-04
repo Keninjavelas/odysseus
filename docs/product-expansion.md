@@ -34,7 +34,8 @@ product experience described later in the roadmap is complete.
   audio lane and mixed into the preview. The caption lane exports as SRT and
   is embedded as a selectable subtitle track in the MP4. Timeline edits use
   revision checks so a stale browser tab receives a conflict instead of
-  overwriting a newer edit.
+  overwriting a newer edit. The saved episode list lets users reopen timelines
+  after a page refresh.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
