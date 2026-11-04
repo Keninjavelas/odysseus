@@ -124,8 +124,14 @@ def main(argv: list[str] | None = None) -> int:
     # `python` is on PATH if no venv is found — useful in container
     # installs that wire the deps system-wide.
     repo_root = SCRIPTS_DIR.parent
-    venv_python = repo_root / "venv" / "bin" / "python"
-    py = str(venv_python) if venv_python.exists() else sys.executable
+    candidates = (repo_root / "venv" / "Scripts" / "python.exe",
+                  repo_root / ".venv" / "Scripts" / "python.exe",
+                  repo_root / "venv" / "bin" / "python",
+                  repo_root / ".venv" / "bin" / "python")
+    venv_python = next((path for path in candidates if path.is_file()), None)
+    py = str(venv_python) if venv_python else sys.executable
+    if sys.platform == "win32":
+        return subprocess.call([py, str(sub)] + argv[1:])
     os.execv(py, [py, str(sub)] + argv[1:])
     return 0  # unreachable
 

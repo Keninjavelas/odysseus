@@ -219,10 +219,18 @@ def managed_by_service(root, unit_dirs=None):
 def pid_command(pid):
     """Return the full command line of `pid`, or "" if it is not ours to see."""
     try:
-        result = subprocess.run(
-            ["ps", "-o", "command=", "-p", str(int(pid))],
-            capture_output=True, text=True, timeout=5, check=False,
-        )
+        process_id = int(pid)
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {process_id}').CommandLine"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        else:
+            result = subprocess.run(
+                ["ps", "-o", "command=", "-p", str(process_id)],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
     except (OSError, subprocess.SubprocessError, ValueError):
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
@@ -305,7 +313,7 @@ def start_chroma(venv_python, port, chroma_path, log_path):
     Returns (entry_or_None, note). Adopting a foreign server is not one of
     the outcomes: the caller has already established that the port is free.
     """
-    binary = Path(venv_python).parent / "chroma"
+    binary = Path(venv_python).parent / ("chroma.exe" if sys.platform == "win32" else "chroma")
     if not binary.exists():
         return None, (
             "keyword-only mode: no `chroma` binary in this venv "
@@ -527,18 +535,30 @@ def resolve_venv(root, args):
     candidates = [
         Path(args.venv).expanduser().resolve() if args.venv else None,
         Path(root) / "venv",
+        Path(root) / ".venv",
         remembered_venv(root),
     ]
     for candidate in candidates:
-        if candidate and (candidate / "bin" / "python").exists():
-            return candidate / "bin" / "python"
+        interpreter = venv_interpreter(candidate) if candidate else None
+        if interpreter:
+            return interpreter
     if args.venv:
-        fail(f"no interpreter at {Path(args.venv).expanduser().resolve() / 'bin' / 'python'}")
+        fail(f"no Python interpreter in {Path(args.venv).expanduser().resolve()}")
     fail(
         f"no venv at {Path(root) / 'venv'}.\n"
         f"       build one with ./start-macos.sh, or reuse another worktree's "
         f"with --venv /path/to/worktree/venv"
     )
+
+
+def venv_interpreter(root):
+    """Find the Python executable in either a POSIX or Windows virtualenv."""
+    root = Path(root)
+    for relative in (("Scripts", "python.exe"), ("bin", "python")):
+        candidate = root.joinpath(*relative)
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def refuse_if_taken(root, args, ports, state):
@@ -638,12 +658,15 @@ def run_setup(root, venv_python, env, data_dir, log_dir):
 
 def borrow_venv_for_pr(root, args):
     """A fresh PR worktree has no venv; the one we came from will do."""
-    if args.venv or (root / "venv" / "bin" / "python").exists():
+    if args.venv or venv_interpreter(root / "venv") or venv_interpreter(root / ".venv"):
         return
-    source_venv = find_repo_root(Path.cwd()) / "venv"
-    if (source_venv / "bin" / "python").exists():
-        args.venv = str(source_venv)
-        sys.stdout.write(f"  reusing {source_venv} (the PR worktree has none)\n")
+    source_root = find_repo_root(Path.cwd())
+    if source_root:
+        for source_venv in (source_root / "venv", source_root / ".venv"):
+            if venv_interpreter(source_venv):
+                args.venv = str(source_venv)
+                sys.stdout.write(f"  reusing {source_venv} (the PR worktree has none)\n")
+                break
 
 
 def cmd_up(args):
@@ -685,6 +708,8 @@ def cmd_up(args):
     ]
     if args.foreground:
         sys.stdout.write(f"  starting in the foreground on http://127.0.0.1:{ports['app']}\n")
+        if sys.platform == "win32":
+            raise SystemExit(subprocess.call(command, cwd=str(root), env=env))
         os.execve(str(venv_python), command, env)
 
     with open(app_log, "ab") as log:
@@ -750,7 +775,11 @@ def cmd_down(args):
         while time.monotonic() < deadline and pid_is_ours(pid, entry.get("fingerprints") or []):
             time.sleep(0.2)
         if pid_is_ours(pid, entry.get("fingerprints") or []):
-            os.kill(pid, signal.SIGKILL)
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               capture_output=True, check=False)
+            else:
+                os.kill(pid, signal.SIGKILL)
         stopped.append(f"{name} (pid {pid})")
     if stopped:
         sys.stdout.write(f"stopped {', '.join(stopped)}.\n")

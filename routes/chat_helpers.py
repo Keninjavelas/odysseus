@@ -430,6 +430,7 @@ class ChatContext:
     """Everything needed to call the LLM after context-building."""
     preface: list
     rag_sources: list
+    rag_citations: list
     web_sources: list
     used_memories: list
     messages: list

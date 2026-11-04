@@ -135,9 +135,11 @@ def venv_python(dev, root, args):
     recorded = (dev.read_state(root) or {}).get("venv")
     for candidate in (Path(args.venv).expanduser() if args.venv else None,
                       Path(recorded) if recorded else None,
-                      Path(root) / "venv"):
-        if candidate and (candidate / "bin" / "python").exists():
-            return candidate / "bin" / "python"
+                      Path(root) / "venv", Path(root) / ".venv"):
+        if candidate:
+            interpreter = dev.venv_interpreter(candidate)
+            if interpreter:
+                return interpreter
     fail(
         f"no interpreter found for the suite (looked at {Path(root) / 'venv'}).\n"
         f"       build one with ./start-macos.sh, or pass --venv."
