@@ -24,7 +24,10 @@ product experience described later in the roadmap is complete.
   the current chat's project.
 - `/api/evals/cases` saves evaluation prompts and tool/response expectations.
   Submit canonical traces to `/api/evals/cases/<id>/grade`, then compare two
-  stored runs via `/api/evals/compare/<left>/<right>`.
+  stored runs via `/api/evals/compare/<left>/<right>`. Project Lab can also
+  start a fresh read-only evaluation chat against a configured model, capture
+  its native SSE trace, and grade it. When the run reports metrics, the lab
+  shows response time, token use, and context utilization.
 - `/api/studio/episodes` compiles a line-based outline into a saved video,
   narration, and captions timeline. Its GPU-free preview contains shot cards
   and silent audio. `PATCH /api/studio/episodes/<id>/timeline` can edit shot
@@ -48,9 +51,10 @@ product experience described later in the roadmap is complete.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.
-3. **Evaluation runner and view.** Wire saved cases to live model execution,
-   trace capture, latency/token/cost metrics, and a UI for case/run comparison.
-   Current grading accepts an existing canonical trace and is offline.
+3. **Evaluation measurement and view.** Add cost and provider-verified latency
+   metrics, repeatable model and profile sweeps, and a richer case/run comparison UI.
+   The current live runner uses plan mode, so effectful tool workflows still
+   need isolated disposable fixtures before they can be evaluated safely.
 4. **Automatic action extraction.** Connect email, research, and meeting
    pipelines to the review queue with verifiable source deep links. The queue
    currently accepts manual proposals and records their source references.

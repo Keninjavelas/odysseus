@@ -18,7 +18,7 @@
   }
   const jsonOptions = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   async function run(action) {
-    try { notice('Working…'); await action(); notice('Saved.'); }
+    try { notice('Working…'); const result = await action(); notice(typeof result === 'string' ? result : 'Saved.'); }
     catch (error) { notice(error.message || 'Request failed.'); }
   }
 
@@ -31,6 +31,12 @@
   async function loadProjects() {
     const notesResult = await api('/api/notes');
     [state.projects, state.sessions] = await Promise.all([api('/api/projects'), api('/api/sessions')]);
+    const modelSelect = $('live-eval-form').elements.source_session;
+    modelSelect.replaceChildren();
+    for (const session of state.sessions.filter((item) => item.model && item.endpoint_url)) {
+      const option = node('option', `${session.model} · ${session.name || 'Untitled chat'}`);
+      option.value = session.id; modelSelect.append(option);
+    }
     const assignableNotes = (notesResult.notes || []).filter((note) => !note.project_id || state.projects.some((project) => project.id === note.project_id));
     const list = $('project-list'); list.replaceChildren();
     if (!state.projects.length) list.append(node('p', 'No projects yet.'));
@@ -130,14 +136,17 @@
 
   async function loadCases() {
     state.cases = await api('/api/evals/cases');
-    const list = $('case-list'), select = $('grade-form').elements.case_id;
-    list.replaceChildren(); select.replaceChildren();
+    const list = $('case-list');
+    const selectors = [$('grade-form').elements.case_id, $('live-eval-form').elements.case_id];
+    list.replaceChildren(); selectors.forEach((select) => select.replaceChildren());
     for (const item of state.cases) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', item.name), node('p', item.prompt));
       card.append(node('small', `Expected: ${item.expected_tools.join(' → ') || 'none'} · Forbidden: ${item.forbidden_tools.join(', ') || 'none'}`));
       list.append(card);
-      const option = node('option', item.name); option.value = item.id; select.append(option);
+      for (const select of selectors) {
+        const option = node('option', item.name); option.value = item.id; select.append(option);
+      }
     }
     if (!state.cases.length) list.append(node('p', 'No saved cases yet.'));
   }
@@ -165,16 +174,72 @@
       const result = await api(`/api/evals/cases/${form.get('case_id')}/grade`, jsonOptions('POST', {
         model_label: form.get('model_label'), response_text: form.get('response_text'), trace,
       }));
-      const target = $('grade-result'); target.replaceChildren();
-      target.append(node('h3', result.grade.passed ? 'Passed' : 'Needs review'));
-      for (const [name, passed] of Object.entries(result.grade.checks)) {
-        target.append(node('p', `${passed ? '✓' : '✗'} ${name.replaceAll('_', ' ')}`));
+      await showGrade(result, form.get('case_id'));
+    });
+  });
+
+  async function showGrade(result, caseId) {
+    const target = $('grade-result'); target.replaceChildren();
+    target.append(node('h3', result.grade.passed ? 'Passed' : 'Needs review'));
+    for (const [name, passed] of Object.entries(result.grade.checks)) {
+      target.append(node('p', `${passed ? '✓' : '✗'} ${name.replaceAll('_', ' ')}`));
+    }
+    const measures = result.grade.measurements || {};
+    if (Object.keys(measures).length) {
+      target.append(node('p', `Time: ${measures.response_time ?? '—'}s · Tokens: ${measures.total_tokens ?? '—'} · Context: ${measures.context_percent ?? '—'}%`));
+    }
+    const runs = await api(`/api/evals/cases/${caseId}/runs`);
+    if (runs.length >= 2) {
+      const compared = await api(`/api/evals/compare/${runs[1].id}/${runs[0].id}`);
+      target.append(node('small', `Latest two runs: tool count change ${compared.delta.tool_count >= 0 ? '+' : ''}${compared.delta.tool_count}.`));
+      target.append(node('small', ` Time change ${compared.delta.response_time >= 0 ? '+' : ''}${compared.delta.response_time}s; token change ${compared.delta.total_tokens >= 0 ? '+' : ''}${compared.delta.total_tokens}.`));
+    }
+  }
+  $('live-eval-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    run(async () => {
+      const form = new FormData(formElement);
+      const caseId = String(form.get('case_id'));
+      const selectedCase = state.cases.find((item) => item.id === caseId);
+      const sourceSession = state.sessions.find((item) => item.id === form.get('source_session'));
+      if (!selectedCase || !sourceSession) throw new Error('Choose a case and a model.');
+      const newSession = new FormData();
+      newSession.set('name', `[eval] ${selectedCase.name}`);
+      newSession.set('endpoint_url', sourceSession.endpoint_url);
+      newSession.set('model', sourceSession.model);
+      newSession.set('skip_validation', 'true');
+      newSession.set('rag', 'false');
+      if (sourceSession.endpoint_id) newSession.set('endpoint_id', sourceSession.endpoint_id);
+      if (sourceSession.project_id) newSession.set('project_id', sourceSession.project_id);
+      const session = await api('/api/session', { method: 'POST', body: newSession });
+      notice('Running read-only evaluation…');
+      const turn = new FormData();
+      turn.set('message', selectedCase.prompt);
+      turn.set('session', session.id);
+      turn.set('mode', 'agent');
+      turn.set('plan_mode', 'true');
+      const response = await fetch('/api/chat_stream', { method: 'POST', body: turn,
+        headers: { Accept: 'text/event-stream' }, credentials: 'same-origin' });
+      if (!response.ok) throw new Error(`Chat run failed: HTTP ${response.status}`);
+      const raw = await response.text();
+      if (raw.length > 1_900_000) throw new Error('Trace exceeds the evaluation limit; inspect the evaluation chat.');
+      const records = raw.split(/\r?\n\r?\n/).filter((block) => block.trim()).map((block) => ({ sse: `${block}\n\n` }));
+      let visible = '', finalText = '';
+      for (const record of records) {
+        const data = record.sse.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+        if (!data || data === '[DONE]') continue;
+        try {
+          const eventData = JSON.parse(data);
+          if (typeof eventData.delta === 'string') visible += eventData.delta;
+          if (eventData.type === 'final_response') finalText = String(eventData.content || eventData.text || eventData.response || '');
+        } catch (_) { /* Native decoder will report malformed records. */ }
       }
-      const runs = await api(`/api/evals/cases/${form.get('case_id')}/runs`);
-      if (runs.length >= 2) {
-        const compared = await api(`/api/evals/compare/${runs[1].id}/${runs[0].id}`);
-        target.append(node('small', `Latest two runs: tool count change ${compared.delta.tool_count >= 0 ? '+' : ''}${compared.delta.tool_count}.`));
-      }
+      const graded = await api(`/api/evals/cases/${caseId}/grade-native`, jsonOptions('POST', {
+        model_label: sourceSession.model, response_text: finalText || visible, records,
+      }));
+      await showGrade(graded, caseId);
+      return `Evaluation saved. Chat ${session.id} is available for inspection.`;
     });
   });
 

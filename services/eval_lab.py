@@ -1,6 +1,6 @@
 """Offline, deterministic grading of canonical agent traces."""
 
-from src.agent_trace import CanonicalTrace, tool_events_from_trace
+from src.agent_trace import CanonicalTrace, TraceKind, tool_events_from_trace
 
 
 def _ordered_subsequence(actual: list[str], expected: list[str]) -> bool:
@@ -23,6 +23,13 @@ def grade_trace(trace: CanonicalTrace, *, expected_tools: list[str],
         "tool_execution": all(event.get("exit_code") in (None, 0) and not event.get("error")
                               for event in events),
     }
+    metrics = next((event.payload.get("data", {}) for event in reversed(trace.events)
+                    if event.kind == TraceKind.RUNTIME and event.payload.get("type") == "metrics"), {})
+    measurements = {key: metrics.get(key) for key in
+                    ("response_time", "input_tokens", "output_tokens", "total_tokens",
+                     "request_context_tokens", "context_length", "context_percent")
+                    if isinstance(metrics.get(key), (int, float))}
     return {"passed": all(checks.values()), "checks": checks,
             "actual_tools": tools, "tool_count": len(tools),
+            "measurements": measurements,
             "trace_summary": summary}

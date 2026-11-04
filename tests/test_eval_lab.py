@@ -53,9 +53,22 @@ def test_saved_case_replay_and_compare_are_private(eval_db):
                                      trace=_trace().to_list())
     first = eval_routes.grade_case(alice, case["id"], payload)
     second = eval_routes.grade_case(alice, case["id"], payload)
+    native = eval_routes.grade_native_case(alice, case["id"], eval_routes.NativeGradeInput(
+        model_label="native", response_text="Found sources", records=[
+            {"sse": 'data: ' + json.dumps({"type": "tool_start", "tool": "web_search",
+                                           "command": "climate", "round": 1}) + "\n\n"},
+            {"sse": 'data: ' + json.dumps({"type": "tool_output", "tool": "web_search",
+                                           "command": "climate", "output": "found", "exit_code": 0}) + "\n\n"},
+            {"sse": 'data: ' + json.dumps({"type": "metrics", "data": {
+                "input_tokens": 100, "output_tokens": 30, "total_tokens": 130,
+                "response_time": 1.5}}) + "\n\n"},
+            {"sse": "data: [DONE]\n\n"},
+        ]))
     assert first["grade"]["passed"] is True
+    assert native["grade"]["passed"] is True
+    assert native["grade"]["measurements"]["total_tokens"] == 130
     assert eval_routes.compare_runs(alice, first["id"], second["id"])["delta"]["tool_count"] == 0
-    assert len(eval_routes.list_runs(alice, case["id"])) == 2
+    assert len(eval_routes.list_runs(alice, case["id"])) == 3
     with pytest.raises(HTTPException) as denied:
         eval_routes.get_run(bob, first["id"])
     assert denied.value.status_code == 404

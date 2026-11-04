@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from core.database import EvaluationCase, EvaluationRun, SessionLocal
 from services.eval_lab import grade_trace
-from src.agent_trace import CanonicalTrace, CanonicalTraceEvent
+from src.agent_trace import CanonicalTrace, CanonicalTraceEvent, decode_native_trace
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 
 
@@ -28,6 +28,12 @@ class GradeInput(BaseModel):
     model_label: str = Field(default="", max_length=120)
     response_text: str = Field(default="", max_length=200000)
     trace: list[dict] = Field(min_length=1, max_length=5000)
+
+
+class NativeGradeInput(BaseModel):
+    model_label: str = Field(default="", max_length=120)
+    response_text: str = Field(default="", max_length=200000)
+    records: list[dict] = Field(min_length=1, max_length=5000)
 
 
 def _case_payload(case):
@@ -94,28 +100,46 @@ def list_runs(request: Request, case_id: str):
 
 @router.post("/cases/{case_id}/grade", status_code=201)
 def grade_case(request: Request, case_id: str, payload: GradeInput):
-    owner = effective_user(request)
     if len(json.dumps(payload.trace)) > 2_000_000:
         raise HTTPException(413, "Trace exceeds 2 MB")
+    try:
+        events = [CanonicalTraceEvent.from_dict(item) for item in payload.trace]
+        trace = CanonicalTrace(events[0].run_id, events)
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(422, f"Invalid canonical trace: {error}") from error
+    return _save_grade(request, case_id, trace, payload.model_label,
+                       payload.response_text)
+
+
+@router.post("/cases/{case_id}/grade-native", status_code=201)
+def grade_native_case(request: Request, case_id: str, payload: NativeGradeInput):
+    if len(json.dumps(payload.records)) > 2_000_000:
+        raise HTTPException(413, "Trace exceeds 2 MB")
+    try:
+        trace = decode_native_trace(payload.records, run_id=str(uuid.uuid4()))
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(422, f"Invalid native trace: {error}") from error
+    return _save_grade(request, case_id, trace, payload.model_label,
+                       payload.response_text)
+
+
+def _save_grade(request: Request, case_id: str, trace: CanonicalTrace,
+                model_label: str, response_text: str):
+    owner = effective_user(request)
     db = SessionLocal()
     try:
         case = db.query(EvaluationCase).filter(EvaluationCase.id == case_id,
                                                EvaluationCase.owner == owner).first()
         if case is None:
             raise HTTPException(404, "Evaluation case not found")
-        try:
-            events = [CanonicalTraceEvent.from_dict(item) for item in payload.trace]
-            trace = CanonicalTrace(events[0].run_id, events)
-        except (ValueError, KeyError, TypeError) as error:
-            raise HTTPException(422, f"Invalid canonical trace: {error}") from error
         grade = grade_trace(trace, expected_tools=case.expected_tools or [],
                             forbidden_tools=case.forbidden_tools or [],
                             required_text=case.required_text or "",
-                            response_text=payload.response_text)
+                            response_text=response_text)
         run = EvaluationRun(id=str(uuid.uuid4()), owner=owner, case_id=case_id,
-                            model_label=payload.model_label.strip(),
-                            response_text=payload.response_text,
-                            trace_json=payload.trace, grade_json=grade)
+                            model_label=model_label.strip(),
+                            response_text=response_text,
+                            trace_json=trace.to_list(), grade_json=grade)
         db.add(run)
         db.commit()
         return _run_payload(run)
@@ -151,6 +175,10 @@ def compare_runs(request: Request, left_id: str, right_id: str):
         return {"case_id": runs[0].case_id,
                 "left": _run_payload(runs[0]), "right": _run_payload(runs[1]),
                 "delta": {"tool_count": runs[1].grade_json["tool_count"] - runs[0].grade_json["tool_count"],
+                          "response_time": (runs[1].grade_json.get("measurements", {}).get("response_time", 0)
+                                            - runs[0].grade_json.get("measurements", {}).get("response_time", 0)),
+                          "total_tokens": (runs[1].grade_json.get("measurements", {}).get("total_tokens", 0)
+                                           - runs[0].grade_json.get("measurements", {}).get("total_tokens", 0)),
                           "passed": [runs[0].grade_json["passed"], runs[1].grade_json["passed"]]}}
     finally:
         db.close()

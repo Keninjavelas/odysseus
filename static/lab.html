@@ -64,6 +64,15 @@
       </form>
       <div id="case-list" class="cards"></div>
       <div class="subpanel">
+        <h3>Run a read-only case</h3>
+        <p>The run starts a new evaluation chat with the selected model. Plan mode keeps tools read-only; the chat remains available for inspection.</p>
+        <form id="live-eval-form" class="stack-form">
+          <label>Case <select name="case_id" required></select></label>
+          <label>Model from an existing chat <select name="source_session" required></select></label>
+          <button>Run and grade</button>
+        </form>
+      </div>
+      <div class="subpanel">
         <h3>Grade a trace</h3>
         <form id="grade-form" class="stack-form">
           <label>Case <select name="case_id" required></select></label>
