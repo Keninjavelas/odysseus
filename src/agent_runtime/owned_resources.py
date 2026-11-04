@@ -349,7 +349,7 @@ def resolve_owned_operation(operation, *, owner, thread_id, request_id="", docum
                     execution_input = json.dumps(args, sort_keys=True)
     elif namespace == "notes":
         action = str(args.get("action") or "").strip().lower().replace("-", "_")
-        if action in {"list", "search", "find", "add", "create", "new", "save", "remind"}:
+        if action in {"list", "search", "list_open", "find", "add", "create", "new", "save", "remind"}:
             resources.append(collection())
         else:
             identifier = _selector(args, ("id", "note_id", "noteId"))

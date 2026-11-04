@@ -18,6 +18,12 @@ class _Query:
     def first(self):
         return self.note
 
+    def order_by(self, *args, **kwargs):
+        return self
+
+    def all(self):
+        return [self.note]
+
 
 class _Db:
     def __init__(self, note):
@@ -156,3 +162,38 @@ def test_view_returns_full_freeform_note_content(monkeypatch):
     assert result["exit_code"] == 0
     assert content in result["results"]
     assert "FINAL_MARKER" in result["results"]
+
+
+def test_append_item_preserves_existing_checklist_and_deduplicates(monkeypatch):
+    note = _note(owner="alice", note_type="checklist")
+    db = _install_fakes(monkeypatch, note)
+
+    result = _run({"action": "append_item", "id": "abc12345", "text": "Send edit review"})
+    assert result["exit_code"] == 0
+    assert result["index"] == 1
+    assert json.loads(note.items) == [
+        {"text": "item", "done": False},
+        {"text": "Send edit review", "done": False},
+    ]
+    duplicate = _run({"action": "append_item", "id": "abc12345", "text": " send edit review "})
+    assert duplicate["duplicate"] is True
+    assert db.commits == 1
+
+
+def test_append_item_rejects_other_owner(monkeypatch):
+    note = _note(owner="bob", note_type="checklist")
+    db = _install_fakes(monkeypatch, note)
+    result = _run({"action": "append_item", "id": "abc12345", "text": "Private task"})
+    assert result == {"error": "Note not found", "exit_code": 1}
+    assert db.commits == 0
+
+
+def test_list_open_exposes_only_incomplete_items(monkeypatch):
+    note = _note(owner="alice", note_type="checklist",
+                 items='[{"text":"done task","done":true},{"text":"pending task","done":false}]')
+    _install_fakes(monkeypatch, note)
+    result = _run({"action": "list_open"})
+    assert result["exit_code"] == 0
+    assert result["count"] == 1
+    assert result["open_checklists"][0]["pending"] == [{"index": 1, "text": "pending task"}]
+    assert "done task" not in result["results"]

@@ -202,14 +202,14 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
         return "\n".join(lines)
 
     try:
-        if action in ("list", "search", "find"):
+        if action in ("list", "search", "find", "list_open"):
             q = db.query(Note)
             if owner is not None:
                 q = q.filter(Note.owner == owner)
             label_filter = str(args.get("label") or "").strip()
             if label_filter and label_filter.lower() != "default":
                 q = q.filter(Note.label == label_filter)
-            show_archived = args.get("archived", False)
+            show_archived = False if action == "list_open" else args.get("archived", False)
             q = q.filter(Note.archived == show_archived)
             notes = q.order_by(Note.pinned.desc(), Note.updated_at.desc()).all()
             if bool(args.get("pinned")):
@@ -223,6 +223,29 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             )
             if not include_calendar_reminders:
                 notes = [n for n in notes if not _is_calendar_reminder_note(n)]
+            if action == "list_open":
+                open_notes = []
+                for note in notes:
+                    if note.note_type not in {"checklist", "todo", "goal"}:
+                        continue
+                    items = _norm_note_items(note.items)
+                    pending = [{"index": index, "text": item["text"]}
+                               for index, item in enumerate(items) if not item["done"]]
+                    if pending:
+                        open_notes.append({"id": note.id, "title": note.title or "(untitled)",
+                                           "label": note.label, "due_date": note.due_date,
+                                           "pending": pending})
+                try:
+                    limit = max(1, min(int(args.get("limit", 25)), 100))
+                except (TypeError, ValueError):
+                    limit = 25
+                open_notes = open_notes[:limit]
+                lines = []
+                for entry in open_notes:
+                    lines.append(f"- [{entry['id']}] **{entry['title']}**")
+                    lines.extend(f"  [ ] {item['index']}: {item['text']}" for item in entry["pending"])
+                return {"results": "\n".join(lines) if lines else "No open checklist items found.",
+                        "open_checklists": open_notes, "count": len(open_notes), "exit_code": 0}
             if action in ("search", "find"):
                 query = str(
                     args.get("query")
@@ -529,6 +552,31 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             db.commit()
             return {"response": f"Deleted note: \"{title or '(untitled)'}\"", "exit_code": 0}
 
+        elif action == "append_item":
+            note_id = _note_id_arg()
+            if not note_id:
+                return {"error": "append_item requires an explicit note id; no change made.", "exit_code": 1}
+            note = _note_by_prefix(note_id)
+            if not note or not _note_visible_to_owner(note, owner):
+                return {"error": "Note not found", "exit_code": 1}
+            if note.note_type not in {"checklist", "todo", "goal"}:
+                return {"error": "Target note is not a checklist; no change made.", "exit_code": 1}
+            item_text = args.get("text")
+            if not isinstance(item_text, str) or not item_text.strip():
+                return {"error": "append_item requires nonempty text; no change made.", "exit_code": 1}
+            item_text = item_text.strip()
+            items = _norm_note_items(note.items)
+            if any(_norm_note_text(item["text"]).casefold() == _norm_note_text(item_text).casefold()
+                   for item in items):
+                return {"response": "Checklist item already exists; no change made.",
+                        "note_id": note.id, "duplicate": True, "exit_code": 0}
+            items.append({"text": item_text, "done": False})
+            note.items = json.dumps(items)
+            flag_modified(note, "items")
+            db.commit()
+            return {"response": f"Added checklist item: {item_text}", "note_id": note.id,
+                    "index": len(items) - 1, "open_url": f"/#open=notes&note={note.id}", "exit_code": 0}
+
         elif action == "toggle_item":
             note_id = _note_id_arg()
             index = args.get("index")
@@ -554,7 +602,7 @@ async def do_manage_notes(content: str, owner: Optional[str] = None) -> Dict:
             return {"response": f"Item '{items[index].get('text', '')}' marked {mark}", "exit_code": 0}
 
         else:
-            return {"error": f"Unknown action: {action}. Use list/search/view/add/update/delete/toggle_item", "exit_code": 1}
+            return {"error": f"Unknown action: {action}. Use list/search/list_open/view/add/update/append_item/delete/toggle_item", "exit_code": 1}
     except Exception as e:
         logger.error(f"manage_notes error: {e}")
         return {"error": str(e), "exit_code": 1}

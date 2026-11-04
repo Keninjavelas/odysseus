@@ -4796,7 +4796,7 @@ def _has_successful_notes_action_evidence(
 ) -> bool:
     expected = {str(a or "").strip().lower() for a in expected_actions if a}
     if not expected:
-        expected = {"list", "search", "find", "view", "add", "create", "update", "edit", "delete", "remove", "toggle_item"}
+        expected = {"list", "search", "list_open", "find", "view", "add", "create", "update", "edit", "append_item", "delete", "remove", "toggle_item"}
     aliases = {
         "create": "add",
         "new": "add",
@@ -13713,9 +13713,11 @@ def _ody_qwen_terminal_tool_summary(tool_event: dict[str, Any], user_text: str =
 
     if tool_name == "manage_notes" and action == "view":
         return output.removeprefix("AI: ").strip()
-    if tool_name == "manage_notes" and action in {"list", "search", "find", "lis"}:
+    if tool_name == "manage_notes" and action == "list_open":
+        return output.removeprefix("AI: ").strip()
+    if tool_name == "manage_notes" and action in {"list", "search", "list_open", "find", "lis"}:
         return _note_list_summary_from_tool_output(output)
-    if tool_name == "manage_notes" and action in {"add", "create", "update", "edit", "delete", "remove", "toggle_item"}:
+    if tool_name == "manage_notes" and action in {"add", "create", "update", "edit", "append_item", "delete", "remove", "toggle_item"}:
         return output.removeprefix("AI: ").strip()
     if tool_name == "manage_calendar" and action in {"list", "list_events", "lis_events"}:
         return _calendar_list_summary_from_tool_output(output, user_text=user_text)
@@ -22792,7 +22794,7 @@ async def stream_agent_loop(
             # tools (intersection with the plan-mode read-only allowlist) so the
             # agent can investigate; write/shell tools stay out until the request
             # actually calls for them (RAG retrieval adds those on a real ask).
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
             from src.tool_security import PLAN_MODE_READONLY_TOOLS
             _relevant_tools |= (_DOMAIN_TOOL_MAP["files"] & PLAN_MODE_READONLY_TOOLS)
             _relevant_tools.difference_update({"bash", "python"})
@@ -22816,7 +22818,7 @@ async def stream_agent_loop(
                     _TOOL_SELECTION_TIMEOUT_SECONDS,
                 )
                 tool_idx = None
-                _relevant_tools = set(ALWAYS_AVAILABLE)
+                _relevant_tools = set(_always_base)
             if tool_idx:
                 if mcp_mgr:
                     try:
@@ -22860,13 +22862,13 @@ async def stream_agent_loop(
     # Fallback: if RAG unavailable, use keyword-based tool selection
     # instead of sending ALL tools (which overwhelms the model).
     if not guide_only and not _relevant_tools and _retrieval_query:
-        from src.tool_index import ALWAYS_AVAILABLE, ToolIndex
-        _relevant_tools = set(ALWAYS_AVAILABLE)
+        from src.tool_index import ToolIndex
+        _relevant_tools = set(_always_base)
         ql = _retrieval_query.lower()
         for keywords, tools in ToolIndex._KEYWORD_HINTS.items():
             if any(kw in ql for kw in keywords):
                 _relevant_tools.update(tools)
-        logger.info(f"[tool-rag] Keyword fallback selected: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
+        logger.info(f"[tool-rag] Keyword fallback selected: {sorted(_relevant_tools - _always_base)}")
 
     # If deterministic domain detection fired, seed the corresponding domain
     # tools into the selected tool set. This is not direct prompt-pack
@@ -22999,8 +23001,7 @@ async def stream_agent_loop(
     # inspect files whose inline text was truncated or omitted.
     if not guide_only and uploaded_files:
         if _relevant_tools is None:
-            from src.tool_index import ALWAYS_AVAILABLE
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
         _relevant_tools.update({"read_file", "grep", "ls", "manage_documents"})
         if _uploaded_read_only_turn:
             _relevant_tools = {"read_file"}
@@ -23029,8 +23030,7 @@ async def stream_agent_loop(
                 sorted(forced_set),
             )
         elif _relevant_tools is None:
-            from src.tool_index import ALWAYS_AVAILABLE
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
         if not _exact_forced_native_chain:
             _relevant_tools.update(forced_set)
 
@@ -23129,8 +23129,7 @@ async def stream_agent_loop(
             _explicit_delegation_tools.update({"list_models", "chat_with_model", "pipeline"})
         if _explicit_delegation_tools:
             if _relevant_tools is None:
-                from src.tool_index import ALWAYS_AVAILABLE
-                _relevant_tools = set(ALWAYS_AVAILABLE)
+                _relevant_tools = set(_always_base)
             _relevant_tools.update(_explicit_delegation_tools - disabled_tools)
             logger.info(
                 "[agent-intent] explicit delegation enabled tools=%s",
@@ -23147,8 +23146,7 @@ async def stream_agent_loop(
         )
     ):
         if _relevant_tools is None:
-            from src.tool_index import ALWAYS_AVAILABLE
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
         _relevant_tools.add("update_plan")
         _relevant_tools.discard("manage_tasks")
         logger.info("[agent-intent] plan-only request removed scheduled-task tooling")
@@ -23197,7 +23195,7 @@ async def stream_agent_loop(
             )
         if _relevant_tools is None:
             from src.tool_index import ALWAYS_AVAILABLE
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
         _relevant_tools.update(_web_turn_tools)
         _non_web_domains = _intent_domains - {"web"}
         if not _non_web_domains and not _explicit_delegation_tools:
@@ -23211,8 +23209,7 @@ async def stream_agent_loop(
     ):
         disabled_tools.difference_update(WEB_TOOL_NAMES)
         if _relevant_tools is None:
-            from src.tool_index import ALWAYS_AVAILABLE
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
         _relevant_tools.update(WEB_TOOL_NAMES)
         _relevant_tools.difference_update({
             "list_served_models",
@@ -23322,8 +23319,7 @@ async def stream_agent_loop(
             )
     if _has_tui_host_bridge and not _uploaded_read_only_turn:
         if _base_relevant_tools is None:
-            from src.tool_index import ALWAYS_AVAILABLE
-            _base_relevant_tools = set(ALWAYS_AVAILABLE)
+            _base_relevant_tools = set(_always_base)
         _base_relevant_tools.add("host_shell")
     elif (
         isinstance(client_runtime_context, dict)
@@ -23537,13 +23533,11 @@ async def stream_agent_loop(
                 route_tools.add("private_browser")
         if _web_fetch_needs_private_browser and "private_browser" not in disabled_tools:
             if route_tools is None:
-                from src.tool_index import ALWAYS_AVAILABLE
-                route_tools = set(ALWAYS_AVAILABLE)
+                route_tools = set(_always_base)
             route_tools.update({"web_search", "web_fetch", "private_browser"})
         if _private_browser_needs_static_fallback:
             if route_tools is None:
-                from src.tool_index import ALWAYS_AVAILABLE
-                route_tools = set(ALWAYS_AVAILABLE)
+                route_tools = set(_always_base)
             route_tools.update({"web_search", "web_fetch"})
             route_tools.discard("private_browser")
 
@@ -23695,8 +23689,7 @@ async def stream_agent_loop(
         and "private_browser" not in disabled_tools
     ):
         if _relevant_tools is None:
-            from src.tool_index import ALWAYS_AVAILABLE
-            _relevant_tools = set(ALWAYS_AVAILABLE)
+            _relevant_tools = set(_always_base)
         _relevant_tools.update({"web_search", "web_fetch", "private_browser"})
     # Model-family clamps and RAG selection run before the final TUI routing
     # decision. Re-apply the host-local surface here so a stale backend tool
@@ -26121,7 +26114,7 @@ async def stream_agent_loop(
         _approved_effectful = (
             tool_result_is_successful(approved_result)
             and (
-                (approved.tool_name == "manage_notes" and _approved_action in {"add", "create", "edit", "update", "delete", "remove"})
+                (approved.tool_name == "manage_notes" and _approved_action in {"add", "create", "edit", "update", "append_item", "delete", "remove"})
                 or (approved.tool_name == "manage_calendar" and _approved_action in {"create", "create_event", "update", "update_event", "delete", "delete_event"})
                 or (approved.tool_name == "manage_contact" and _approved_action in {"add", "create", "edit", "update", "delete", "remove"})
                 or (approved.tool_name == "manage_skills" and _approved_action in {"add", "edit", "patch", "publish", "delete", "remove"})
@@ -26354,8 +26347,7 @@ async def stream_agent_loop(
 
         if _web_fetch_needs_private_browser and "private_browser" not in disabled_tools:
             if _relevant_tools is None:
-                from src.tool_index import ALWAYS_AVAILABLE
-                _relevant_tools = set(ALWAYS_AVAILABLE)
+                _relevant_tools = set(_always_base)
             _relevant_tools.update({"web_search", "web_fetch", "private_browser"})
         if _private_browser_needs_static_fallback:
             if _relevant_tools is None:
@@ -26374,8 +26366,7 @@ async def stream_agent_loop(
             and not _private_browser_needs_static_fallback
         ):
             if _relevant_tools is None:
-                from src.tool_index import ALWAYS_AVAILABLE
-                _relevant_tools = set(ALWAYS_AVAILABLE)
+                _relevant_tools = set(_always_base)
             _relevant_tools.update({"web_search", "web_fetch", "private_browser"})
         if normalized_external_tool_schemas and not guide_only:
             if _relevant_tools is None:
@@ -33015,7 +33006,7 @@ async def stream_agent_loop(
                                 _recent_note_title,
                             )
                     elif (
-                        _note_action in {"update", "delete", "toggle_item"}
+                        _note_action in {"update", "append_item", "delete", "toggle_item"}
                         and _looks_like_recent_reference(_last_user, "note")
                         and not _user_named_explicit_title(_last_user)
                     ):
@@ -35033,11 +35024,13 @@ async def stream_agent_loop(
                         ).strip()
                         if _notes_text.startswith("AI: "):
                             _notes_text = _notes_text[4:].strip()
+                    elif _notes_action == "list_open":
+                        _notes_text = str(result.get("results") or result.get("output") or "").strip()
                     elif _notes_action in {"list", "search", "find", "lis"}:
                         _notes_text = _note_list_summary_from_tool_output(
                             result.get("output") or result.get("results") or result.get("content") or ""
                         )
-                    elif _notes_action in {"add", "update", "delete", "toggle_item"}:
+                    elif _notes_action in {"add", "update", "append_item", "delete", "toggle_item"}:
                         _notes_text = str(
                             result.get("response")
                             or result.get("output")
@@ -35135,7 +35128,7 @@ async def stream_agent_loop(
                     _notes_terminal_action = ""
                 _notes_mutation_terminal = _notes_terminal_action in {
                     "add", "create", "new", "save", "remind",
-                    "update", "edit", "delete", "remove", "toggle_item",
+                    "update", "edit", "append_item", "delete", "remove", "toggle_item",
                 }
             if (
                 (_ody_qwen_finetune_model or _qwen38_tool_router or _notes_mutation_terminal)
@@ -35346,7 +35339,7 @@ async def stream_agent_loop(
                         _notes_text = _note_list_summary_from_tool_output(
                             result.get("output") or result.get("results") or result.get("content") or ""
                         )
-                    elif _notes_action in {"add", "update", "delete", "toggle_item"}:
+                    elif _notes_action in {"add", "update", "append_item", "delete", "toggle_item"}:
                         _notes_text = str(
                             result.get("response")
                             or result.get("output")
@@ -38363,6 +38356,11 @@ async def stream_agent_loop(
                     _note_view_output = _note_view_output[4:].strip()
                 if _note_view_output:
                     full_response = _note_view_output
+                break
+            if _tool_name == "manage_notes" and _tool_action == "list_open":
+                _open_output = str(_ev.get("output") or "").removeprefix("AI: ").strip()
+                if _open_output:
+                    full_response = _open_output
                 break
             if _tool_name == "manage_notes" and _tool_action in {"list", "search", "find", "lis"}:
                 if _visible_response_text(full_response):

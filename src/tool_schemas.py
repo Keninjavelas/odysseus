@@ -1090,16 +1090,18 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "manage_notes",
-            "description": "Saved notes/checklists only; no tools for word definitions like musical note or pinned; tagged/archive lists use action=list+label/archived; archive uses update. Use view only with an explicit note id when you need the full body. Search is only for saved-note title/topic lookup. IMPORTANT: For to-do lists / checklists, set note_type='checklist' and pass the items as the `checklist_items` array — do NOT serialize them into `content` as plain text. For freeform notes, use note_type='note' and put the body in `content`. `due_date` accepts natural language like 'tomorrow at 9am' (parsed in the user's timezone) and fires a notification — do not also create a calendar event for the same reminder. Delete only when the user explicitly says delete.",
+            "description": "Saved notes/checklists only; no tools for word definitions like musical note or pinned; tagged/archive lists use action=list+label/archived; archive uses update. Use list_open for incomplete checklist items and append_item with an existing note id to add a task without rewriting other items. Use view only with an explicit note id when you need the full body. Search is only for saved-note title/topic lookup. IMPORTANT: For to-do lists / checklists, set note_type='checklist' and pass the items as the `checklist_items` array — do NOT serialize them into `content` as plain text. For freeform notes, use note_type='note' and put the body in `content`. `due_date` accepts natural language like 'tomorrow at 9am' (parsed in the user's timezone) and fires a notification — do not also create a calendar event for the same reminder. Delete only when the user explicitly says delete.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {"type": "string",
-                               "enum": ["list", "search", "view", "add", "update", "delete", "toggle_item"],
+                               "enum": ["list", "search", "list_open", "view", "add", "update", "append_item", "delete", "toggle_item"],
                                "description": "The action to perform"},
-                    "id": {"type": "string", "description": "Note id (for view/update/delete/toggle_item); 8-char prefix is fine"},
-                    "note_id": {"type": "string", "description": "Alias for id; accepted for view/update/delete/toggle_item when the model emits note_id"},
+                    "id": {"type": "string", "description": "Note id (for view/update/append_item/delete/toggle_item); 8-char prefix is fine"},
+                    "note_id": {"type": "string", "description": "Alias for id; accepted for view/update/append_item/delete/toggle_item when the model emits note_id"},
                     "query": {"type": "string", "description": "Search text for action='search'"},
+                    "text": {"type": "string", "description": "Task text for append_item"},
+                    "limit": {"type": "integer", "description": "Maximum checklists returned by list_open (1-100; default 25)"},
                     "title": {"type": "string", "description": "Note title (for add/update, or exact-title delete when no id is available)"},
                     "content": {"type": "string", "description": "Freeform body text. Use this for note_type='note'. Do NOT use this for checklists — pass `checklist_items` instead."},
                     "note_type": {"type": "string", "enum": ["note", "checklist"],
