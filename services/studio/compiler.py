@@ -130,10 +130,17 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
     return timeline
 
 
-def _draw_card(title: str, beat: str, destination: Path, number: int) -> None:
-    from PIL import Image, ImageDraw, ImageFont
+def _draw_card(title: str, beat: str, destination: Path, number: int,
+               media_path: Path | None = None) -> None:
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-    frame = Image.new("RGB", (960, 540), (18, 25, 38))
+    if media_path is not None:
+        if not media_path.is_file():
+            raise RuntimeError(f"Shot {number} image is missing")
+        with Image.open(media_path) as source:
+            frame = ImageOps.fit(source.convert("RGB"), (960, 540))
+    else:
+        frame = Image.new("RGB", (960, 540), (18, 25, 38))
     draw = ImageDraw.Draw(frame)
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", 36)
@@ -142,11 +149,16 @@ def _draw_card(title: str, beat: str, destination: Path, number: int) -> None:
         font = ImageFont.load_default()
         body_font = font
     draw.rectangle((0, 0, 960, 12), fill=(82, 166, 218))
-    draw.text((55, 55), title[:48], fill=(240, 244, 250), font=font)
-    draw.text((55, 125), f"SHOT {number:02d}  ·  STORYBOARD PREVIEW", fill=(100, 190, 225), font=body_font)
-    wrapped = textwrap.wrap(beat, width=53, max_lines=7, placeholder="…")
-    for line_no, line in enumerate(wrapped):
-        draw.text((55, 200 + line_no * 38), line, fill=(222, 229, 236), font=body_font)
+    if media_path is not None:
+        draw.rectangle((0, 404, 960, 540), fill=(12, 18, 26))
+        draw.text((40, 422), title[:48], fill=(240, 244, 250), font=font)
+        draw.text((40, 480), f"SHOT {number:02d}", fill=(100, 190, 225), font=body_font)
+    else:
+        draw.text((55, 55), title[:48], fill=(240, 244, 250), font=font)
+        draw.text((55, 125), f"SHOT {number:02d}  ·  STORYBOARD PREVIEW", fill=(100, 190, 225), font=body_font)
+        wrapped = textwrap.wrap(beat, width=53, max_lines=7, placeholder="…")
+        for line_no, line in enumerate(wrapped):
+            draw.text((55, 200 + line_no * 38), line, fill=(222, 229, 236), font=body_font)
     frame.save(destination)
 
 
@@ -161,7 +173,14 @@ def render_preview(timeline: dict, directory: Path, *, ffmpeg: str | None = None
     clips = timeline["tracks"]["video"]
     for index, clip in enumerate(clips, start=1):
         frame_name = f"shot-{index:03d}.png"
-        _draw_card(timeline["title"], clip["visual_prompt"], directory / frame_name, index)
+        media_path = None
+        if clip.get("media_path"):
+            relative = Path(clip["media_path"])
+            if relative.is_absolute() or ".." in relative.parts:
+                raise RuntimeError("Shot image path is invalid")
+            media_path = directory / relative
+        _draw_card(clip["title"], clip["visual_prompt"], directory / frame_name,
+                   index, media_path)
         lines.extend((f"file {frame_name}", f"duration {clip['duration']}"))
     lines.append(f"file shot-{len(clips):03d}.png")
     concat_file.write_text("\n".join(lines) + "\n", encoding="utf-8")

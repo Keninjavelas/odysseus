@@ -190,12 +190,30 @@
     timeline.tracks.video.forEach((shot, index) => {
       const card = node('article', undefined, 'card');
       card.append(node('h3', `Shot ${index + 1}`));
+      if (shot.media_path) {
+        const image = node('img');
+        image.src = `/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/still`;
+        image.alt = `Still for shot ${index + 1}`;
+        image.style.cssText = 'display:block;width:100%;max-width:440px;border-radius:7px;margin:12px 0';
+        card.append(image);
+      }
       const title = node('input'); title.value = shot.title; title.setAttribute('aria-label', 'Shot title');
       const prompt = node('textarea'); prompt.value = shot.visual_prompt; prompt.rows = 3; prompt.setAttribute('aria-label', 'Visual prompt');
       const narration = node('textarea'); narration.value = timeline.tracks.narration[index].text; narration.rows = 3; narration.setAttribute('aria-label', 'Narration');
       const duration = node('input'); duration.type = 'number'; duration.min = '1'; duration.max = '30'; duration.value = shot.duration; duration.setAttribute('aria-label', 'Duration in seconds');
       card.append(title, prompt, narration, duration);
       const actions = node('div', undefined, 'card-actions');
+      const fileInput = node('input'); fileInput.type = 'file'; fileInput.accept = 'image/png,image/jpeg,image/webp';
+      fileInput.setAttribute('aria-label', `Still image for shot ${index + 1}`);
+      const upload = node('button', 'Use still image');
+      upload.addEventListener('click', () => run(async () => {
+        if (!fileInput.files.length) throw new Error('Choose an image first.');
+        const body = new FormData(); body.append('image', fileInput.files[0]);
+        const result = await api(`/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/still`,
+                                 { method: 'POST', body });
+        showEpisode(result.timeline, result.preview_url);
+      }));
+      actions.append(fileInput, upload);
       const save = node('button', 'Save shot');
       save.addEventListener('click', () => run(async () => {
         const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {

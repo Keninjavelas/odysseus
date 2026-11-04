@@ -1,8 +1,9 @@
 import json
 import shutil
+import io
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from types import SimpleNamespace
 
 from services.studio.compiler import compile_storyboard, edit_storyboard, render_preview, save_timeline
@@ -73,4 +74,29 @@ def test_episode_api_keeps_each_owners_timeline_private(tmp_path, monkeypatch):
     assert studio_routes.get_timeline(alice, episode_id).path.name == "timeline.json"
     with pytest.raises(HTTPException) as denied:
         studio_routes.get_timeline(bob, episode_id)
+    assert denied.value.status_code == 404
+
+
+def test_still_upload_renders_real_image_and_keeps_owner_boundary(tmp_path, monkeypatch):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("FFmpeg not installed")
+    from PIL import Image
+
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    created = studio_routes.create_episode(
+        alice, studio_routes.EpisodeInput(title="Ocean", outline="First beat", render_preview=False))
+    episode_id = created["timeline"]["episode_id"]
+    source = io.BytesIO()
+    Image.new("RGB", (320, 180), (10, 120, 200)).save(source, format="PNG")
+    source.seek(0)
+    result = studio_routes.upload_shot_still(
+        alice, episode_id, "shot-001", UploadFile(file=source, filename="ocean.png"))
+    assert result["timeline"]["tracks"]["video"][0]["placeholder"] is False
+    assert studio_routes.get_preview(alice, episode_id).path.is_file()
+    assert studio_routes.get_shot_still(alice, episode_id, "shot-001").path.is_file()
+    with pytest.raises(HTTPException) as denied:
+        studio_routes.get_shot_still(bob, episode_id, "shot-001")
     assert denied.value.status_code == 404

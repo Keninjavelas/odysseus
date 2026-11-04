@@ -1,11 +1,13 @@
 """Owner-private Understanding Studio dry-run episodes."""
 
 import hashlib
+import io
 import json
 import re
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -95,6 +97,65 @@ def update_timeline(request: Request, episode_id: str, edit: TimelineEdit):
     save_timeline(timeline, directory)
     return {"timeline": timeline,
             "preview_url": f"/api/studio/episodes/{episode_id}/preview" if edit.render_preview else None}
+
+
+@router.post("/episodes/{episode_id}/shots/{shot_id}/still")
+def upload_shot_still(request: Request, episode_id: str, shot_id: str,
+                      image: UploadFile = File(...)):
+    """Attach a local still to one shot and refresh the GPU-free preview."""
+    from PIL import Image, UnidentifiedImageError
+
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    shot = next((clip for clip in timeline["tracks"]["video"] if clip["id"] == shot_id), None)
+    if shot is None:
+        raise HTTPException(404, "Shot not found")
+    raw = image.file.read(20_000_001)
+    if len(raw) > 20_000_000:
+        raise HTTPException(413, "Still image exceeds 20 MB")
+    try:
+        with Image.open(io.BytesIO(raw)) as decoded:
+            if decoded.format not in {"PNG", "JPEG", "WEBP"} or decoded.width * decoded.height > 24_000_000:
+                raise ValueError("Still must be PNG, JPEG, or WebP under 24 megapixels")
+            frame = decoded.convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        raise HTTPException(422, f"Invalid still image: {error}") from error
+    assets = directory / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    filename = uuid.uuid4().hex + ".jpg"
+    frame.save(assets / filename, format="JPEG", quality=92)
+    shot["media_path"] = f"assets/{filename}"
+    shot["placeholder"] = False
+    try:
+        render_preview(timeline, directory)
+    except RuntimeError as error:
+        raise HTTPException(503, str(error)) from error
+    save_timeline(timeline, directory)
+    return {"timeline": timeline,
+            "preview_url": f"/api/studio/episodes/{episode_id}/preview",
+            "still_url": f"/api/studio/episodes/{episode_id}/shots/{shot_id}/still"}
+
+
+@router.get("/episodes/{episode_id}/shots/{shot_id}/still")
+def get_shot_still(request: Request, episode_id: str, shot_id: str):
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    shot = next((clip for clip in timeline["tracks"]["video"] if clip["id"] == shot_id), None)
+    if not shot or not shot.get("media_path"):
+        raise HTTPException(404, "Still not found")
+    relative = Path(shot["media_path"])
+    if relative.is_absolute() or ".." in relative.parts:
+        raise HTTPException(404, "Still not found")
+    image_path = directory / relative
+    if not image_path.is_file():
+        raise HTTPException(404, "Still not found")
+    return FileResponse(image_path, media_type="image/jpeg")
 
 
 @router.get("/episodes/{episode_id}/preview")
