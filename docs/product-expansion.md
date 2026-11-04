@@ -23,7 +23,8 @@ product experience described later in the roadmap is complete.
 - `/api/studio/episodes` compiles a line-based outline into a saved video,
   narration, and captions timeline. Its GPU-free preview contains shot cards
   and silent audio. `PATCH /api/studio/episodes/<id>/timeline` can edit shot
-  text, duration, and order, then regenerate the MP4 preview.
+  text, duration, and order, split or delete shots with ripple timing, then
+  regenerate the MP4 preview.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
@@ -45,7 +46,8 @@ product experience described later in the roadmap is complete.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, local image/TTS providers, voiceover,
    subtitles, and background FFmpeg jobs. The current preview uses placeholders.
-6. **NLE editing.** Add split/trim/ripple operations, multiple video and audio
+6. **NLE editing.** Expand basic split/delete ripple edits with clip trim,
+   multiple video and audio
    tracks, transitions, keyframes, waveform and proxy generation, and export
    presets. Interchange should map the timeline to OpenTimelineIO once the
    multi-track model is stable.

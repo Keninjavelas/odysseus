@@ -243,7 +243,8 @@ research a topic or synthesize narration. Target production architecture:
 
 ### 3. Video editor / NLE ("Premiere-style") — timeline foundation built
 The compiler emits an editable JSON timeline; `/lab` can change shot text,
-duration, and order and regenerate a preview. The target NLE delegates pixel
+duration, and order, split or delete shots with ripple timing, and regenerate
+a preview. The target NLE delegates pixel
 and audio work to background FFmpeg jobs so exports stay editable.
 - Multi-track timeline (video + audio), clip trim / split / ripple, transitions.
 - Keyframeable transforms + the same camera-motion vocabulary the compiler uses

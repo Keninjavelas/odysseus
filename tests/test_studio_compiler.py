@@ -46,6 +46,18 @@ def test_storyboard_edit_keeps_three_lanes_aligned():
     assert timeline["duration"] == 13
 
 
+def test_split_and_delete_ripple_all_tracks():
+    timeline = compile_storyboard("Ocean", "First\nSecond")
+    edit_storyboard(timeline, {"action": "split_shot", "shot_id": "shot-001", "at_seconds": 1})
+    assert timeline["duration"] == 6
+    assert [shot["start"] for shot in timeline["tracks"]["video"]] == [0, 1, 3]
+    assert timeline["tracks"]["narration"][1]["text"] == ""
+    second_part = timeline["tracks"]["video"][1]["id"]
+    edit_storyboard(timeline, {"action": "delete_shot", "shot_id": second_part})
+    assert [shot["start"] for shot in timeline["tracks"]["video"]] == [0, 1]
+    assert timeline["duration"] == 4
+
+
 def test_episode_api_keeps_each_owners_timeline_private(tmp_path, monkeypatch):
     monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
     monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)

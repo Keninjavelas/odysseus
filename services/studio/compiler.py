@@ -86,6 +86,31 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
                 raise ValueError("duration must be between 1 and 30 seconds")
             for track in (video, narration, captions):
                 track[index]["duration"] = float(duration)
+    elif kind == "split_shot":
+        if len(video) >= 60:
+            raise ValueError("preview timelines support at most 60 shots")
+        at_seconds = operation.get("at_seconds")
+        duration = float(video[index]["duration"])
+        if (isinstance(at_seconds, bool) or not isinstance(at_seconds, (int, float))
+                or not 1 <= at_seconds <= duration - 1):
+            raise ValueError("at_seconds must leave at least one second on each side")
+        new_id = f"{shot_id}-part-{uuid.uuid4().hex[:8]}"
+        for track in (video, narration, captions):
+            original = track[index]
+            latter = dict(original)
+            latter["id"] = new_id
+            latter["duration"] = duration - float(at_seconds)
+            original["duration"] = float(at_seconds)
+            track.insert(index + 1, latter)
+        # A duplicated transcript would appear twice in the export; the new
+        # segment is deliberately empty until the editor writes its voiceover.
+        narration[index + 1]["text"] = ""
+        captions[index + 1]["text"] = ""
+    elif kind == "delete_shot":
+        if len(video) == 1:
+            raise ValueError("an episode must keep at least one shot")
+        for track in (video, narration, captions):
+            track.pop(index)
     elif kind == "move_shot":
         target = operation.get("index")
         if isinstance(target, bool) or not isinstance(target, int) or not 0 <= target < len(video):
@@ -93,7 +118,7 @@ def edit_storyboard(timeline: dict, operation: dict) -> dict:
         for track in (video, narration, captions):
             track.insert(target, track.pop(index))
     else:
-        raise ValueError("action must be set_shot or move_shot")
+        raise ValueError("action must be set_shot, split_shot, delete_shot, or move_shot")
     cursor = 0.0
     for offset in range(len(video)):
         duration = float(video[offset]["duration"])

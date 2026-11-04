@@ -147,6 +147,28 @@
         showEpisode(result.timeline, result.preview_url);
       }));
       actions.append(save);
+      if (shot.duration >= 2) {
+        const split = node('button', 'Split in half');
+        split.addEventListener('click', () => run(async () => {
+          const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {
+            action: 'split_shot', shot_id: shot.id,
+            at_seconds: Math.max(1, Math.floor(shot.duration / 2)), render_preview: true,
+          }));
+          showEpisode(result.timeline, result.preview_url);
+        }));
+        actions.append(split);
+      }
+      if (timeline.tracks.video.length > 1) {
+        const remove = node('button', 'Delete shot');
+        remove.addEventListener('click', () => run(async () => {
+          if (!window.confirm('Delete this shot and close the gap?')) return;
+          const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {
+            action: 'delete_shot', shot_id: shot.id, render_preview: true,
+          }));
+          showEpisode(result.timeline, result.preview_url);
+        }));
+        actions.append(remove);
+      }
       if (index > 0) {
         const up = node('button', 'Move up');
         up.addEventListener('click', () => run(async () => {

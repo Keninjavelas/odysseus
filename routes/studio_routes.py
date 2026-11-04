@@ -32,6 +32,7 @@ class TimelineEdit(BaseModel):
     visual_prompt: str | None = None
     narration_text: str | None = None
     duration: float | None = None
+    at_seconds: float | None = None
     render_preview: bool = False
 
 
