@@ -9,6 +9,7 @@ import { postSettings as _postSettings } from './api.js';
 export async function initAgentSettings() {
   var toolsInput = el('set-agentMaxTools');
   var roundsInput = el('set-agentMaxRounds');
+  var contextProfileInput = el('set-agentContextProfile');
   var supInput = el('set-agentSupervisorLadder');
   var approvalModeInput = el('set-toolApprovalMode');
   var msg = el('set-agentMsg');
@@ -19,6 +20,7 @@ export async function initAgentSettings() {
     var settings = await res.json();
     if (settings.agent_max_tool_calls) toolsInput.value = settings.agent_max_tool_calls;
     if (roundsInput && settings.agent_max_rounds) roundsInput.value = settings.agent_max_rounds;
+    if (contextProfileInput) contextProfileInput.value = ['auto', '4k', '8k', '16k'].includes(settings.agent_context_profile) ? settings.agent_context_profile : 'auto';
     if (supInput) supInput.checked = !!settings.agent_supervisor_ladder;
     if (approvalModeInput) {
       approvalModeInput.value =
@@ -52,6 +54,7 @@ export async function initAgentSettings() {
     if (roundsInput) roundsInput.value = rounds;
     var payload = { agent_max_tool_calls: tools };
     if (rounds != null) payload.agent_max_rounds = rounds;
+    if (contextProfileInput) payload.agent_context_profile = contextProfileInput.value;
     if (supInput) payload.agent_supervisor_ladder = !!supInput.checked;
     if (approvalModeInput) {
       payload.tool_approval_mode =
@@ -68,6 +71,7 @@ export async function initAgentSettings() {
 
   toolsInput.addEventListener('change', save);
   if (roundsInput) roundsInput.addEventListener('change', save);
+  if (contextProfileInput) contextProfileInput.addEventListener('change', save);
   if (supInput) supInput.addEventListener('change', save);
   if (approvalModeInput) approvalModeInput.addEventListener('change', save);
   var cur = parseInt(toolsInput.value, 10) || 0;

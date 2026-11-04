@@ -33,10 +33,9 @@ product experience described later in the roadmap is complete.
 1. **Project context isolation.** Add project IDs to notes, documents, memory,
    research, and media records, and require project filters in agent retrieval.
    The current project API organizes chats; it does not isolate those resources.
-2. **Small-model measurement.** Expose the profile switch in the graphical
-   settings, measure prompt and tool-schema token use, and run saved eval
-   cases against each profile. The setting and budget cap work today; the
-   comparative dashboard remains to build.
+2. **Small-model measurement.** Measure prompt and tool-schema token use, and
+   run saved eval cases against each profile. The settings switch and budget
+   cap work today; the comparative dashboard remains to build.
 3. **Evaluation runner and view.** Wire saved cases to live model execution,
    trace capture, latency/token/cost metrics, and a UI for case/run comparison.
    Current grading accepts an existing canonical trace and is offline.

@@ -2500,6 +2500,15 @@
                 <input id="set-agentMaxRounds" type="text" inputmode="numeric" placeholder="20" class="settings-select" style="width:120px;">
               </div>
               <div class="settings-row">
+                <label class="settings-label" for="set-agentContextProfile">Context profile</label>
+                <select id="set-agentContextProfile" class="settings-select">
+                  <option value="auto">Auto (model window)</option>
+                  <option value="4k">4K · compact</option>
+                  <option value="8k">8K · small</option>
+                  <option value="16k">16K · balanced</option>
+                </select>
+              </div>
+              <div class="settings-row">
                 <label class="settings-label">Tool approval</label>
                 <select id="set-toolApprovalMode" class="settings-select">
                   <option value="ask">Always ask</option>

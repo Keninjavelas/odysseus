@@ -802,6 +802,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         }
         _VALID_VALUES = {
             "tool_approval_mode": {"ask", "off"},
+            "agent_context_profile": {"auto", "4k", "8k", "16k"},
         }
         for key in DEFAULT_SETTINGS:
             if key in RETIRED_SETTING_KEYS:
