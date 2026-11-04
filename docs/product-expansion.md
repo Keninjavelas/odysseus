@@ -34,7 +34,9 @@ product experience described later in the roadmap is complete.
   text, duration, and order, split or delete shots with ripple timing, then
   regenerate the MP4 preview. Local PNG, JPEG, and WebP stills can be attached
   to shots, and local narration audio can be attached to the corresponding
-  audio lane and mixed into the preview. The caption lane exports as SRT and
+  audio lane and mixed into the preview. A shot can also generate voiceover
+  from its text through the configured local or endpoint TTS provider; this
+  requires an explicit click and FFmpeg. The caption lane exports as SRT and
   is embedded as a selectable subtitle track in the MP4. Timeline edits use
   revision checks so a stale browser tab receives a conflict instead of
   overwriting a newer edit. The saved episode list lets users reopen timelines
@@ -59,7 +61,7 @@ product experience described later in the roadmap is complete.
    pipelines to the review queue with verifiable source deep links. The queue
    currently accepts manual proposals and records their source references.
 5. **Studio production mode.** Add sourced outline research, schema-validated
-   shot expansion, continuity bible, local image/TTS providers, generated voiceover,
+   shot expansion, continuity bible, generated stills, batch voiceover,
    multilingual subtitle generation, and background FFmpeg jobs. The current preview uses placeholders
    where a shot has no attached still.
 6. **NLE editing.** Expand basic split/delete ripple edits with clip trim,

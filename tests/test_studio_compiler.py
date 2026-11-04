@@ -155,3 +155,64 @@ def test_narration_upload_mixes_audio_into_preview(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as denied:
         studio_routes.get_shot_narration(bob, episode_id, "shot-001")
     assert denied.value.status_code == 404
+
+
+def test_generate_narration_updates_audio_and_captions(tmp_path, monkeypatch):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("FFmpeg not installed")
+    from services.tts import tts_service
+
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    created = studio_routes.create_episode(
+        alice, studio_routes.EpisodeInput(title="Ocean", outline="First beat", render_preview=False))
+    episode_id = created["timeline"]["episode_id"]
+    source = io.BytesIO()
+    with wave.open(source, "wb") as wav:
+        wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(16000)
+        wav.writeframes(b"".join(struct.pack("<h", int(9000 * math.sin(2 * math.pi * 440 * t / 16000)))
+                                for t in range(4000)))
+    calls = []
+    service = SimpleNamespace(
+        _load_settings=lambda: {"tts_enabled": True, "tts_provider": "local"},
+        synthesize=lambda text: (calls.append(text), source.getvalue())[1])
+    monkeypatch.setattr(tts_service, "get_tts_service", lambda: service)
+    result = studio_routes.synthesize_shot_narration(
+        alice, episode_id, "shot-001",
+        studio_routes.NarrationSynthesis(text="  Generated voiceover  ", expected_revision=1))
+    assert calls == ["Generated voiceover"]
+    assert result["timeline"]["tracks"]["narration"][0]["text"] == "Generated voiceover"
+    assert result["timeline"]["tracks"]["captions"][0]["text"] == "Generated voiceover"
+    assert studio_routes.get_shot_narration(alice, episode_id, "shot-001").path.is_file()
+    assert studio_routes.get_preview(alice, episode_id).path.is_file()
+    assert "Generated voiceover" in studio_routes.get_captions(alice, episode_id).path.read_text()
+    with pytest.raises(HTTPException) as denied:
+        studio_routes.synthesize_shot_narration(
+            bob, episode_id, "shot-001", studio_routes.NarrationSynthesis(text="Mine"))
+    assert denied.value.status_code == 404
+    with pytest.raises(HTTPException) as stale:
+        studio_routes.synthesize_shot_narration(
+            alice, episode_id, "shot-001",
+            studio_routes.NarrationSynthesis(text="Too late", expected_revision=1))
+    assert stale.value.status_code == 409
+
+
+def test_generate_narration_requires_server_provider(tmp_path, monkeypatch):
+    from services.tts import tts_service
+
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    alice = SimpleNamespace(owner="alice")
+    created = studio_routes.create_episode(
+        alice, studio_routes.EpisodeInput(title="Ocean", outline="First beat", render_preview=False))
+    episode_id = created["timeline"]["episode_id"]
+    service = SimpleNamespace(
+        _load_settings=lambda: {"tts_enabled": True, "tts_provider": "browser"},
+        synthesize=lambda text: pytest.fail("Browser-only TTS must not be used for server rendering"))
+    monkeypatch.setattr(tts_service, "get_tts_service", lambda: service)
+    with pytest.raises(HTTPException) as unavailable:
+        studio_routes.synthesize_shot_narration(
+            alice, episode_id, "shot-001", studio_routes.NarrationSynthesis(text="Narrate this"))
+    assert unavailable.value.status_code == 503

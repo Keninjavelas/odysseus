@@ -300,6 +300,15 @@
         showEpisode(result.timeline, result.preview_url);
       }));
       actions.append(audioInput, uploadAudio);
+      const generateAudio = node('button', 'Generate narration');
+      generateAudio.addEventListener('click', () => run(async () => {
+        const text = narration.value.trim();
+        if (!text) throw new Error('Enter narration text first.');
+        const result = await api(`/api/studio/episodes/${timeline.episode_id}/shots/${encodeURIComponent(shot.id)}/synthesize-narration`,
+                                 jsonOptions('POST', { text, expected_revision: timeline.revision }));
+        showEpisode(result.timeline, result.preview_url);
+      }));
+      actions.append(generateAudio);
       const save = node('button', 'Save shot');
       save.addEventListener('click', () => run(async () => {
         const result = await api(`/api/studio/episodes/${timeline.episode_id}/timeline`, jsonOptions('PATCH', {

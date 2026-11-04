@@ -41,6 +41,11 @@ class TimelineEdit(BaseModel):
     expected_revision: int | None = None
 
 
+class NarrationSynthesis(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
+    expected_revision: int | None = None
+
+
 def _owner_dir(owner: str | None) -> Path:
     digest = hashlib.sha256(str(owner or "single-user").encode("utf-8")).hexdigest()[:24]
     return Path(get_default_data_dir()) / "studio" / digest
@@ -213,6 +218,48 @@ def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
     raw = audio.file.read(25_000_001)
     if len(raw) > 25_000_000:
         raise HTTPException(413, "Narration exceeds 25 MB")
+    return _attach_narration(directory, timeline, clip, shot_id, raw, extension)
+
+
+@router.post("/episodes/{episode_id}/shots/{shot_id}/synthesize-narration")
+def synthesize_shot_narration(request: Request, episode_id: str, shot_id: str,
+                              payload: NarrationSynthesis):
+    """Generate one shot's narration with the configured server-side TTS provider."""
+    from services.tts.tts_service import get_tts_service
+
+    directory = _episode_dir(effective_user(request), episode_id)
+    destination = directory / "timeline.json"
+    if not destination.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(destination.read_text(encoding="utf-8"))
+    if payload.expected_revision is not None and payload.expected_revision != timeline.get("revision", 1):
+        raise HTTPException(409, "Timeline changed; reload before generating narration")
+    clip = next((item for item in timeline["tracks"]["narration"] if item["id"] == shot_id), None)
+    if clip is None:
+        raise HTTPException(404, "Shot not found")
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(422, "Narration text is empty")
+    service = get_tts_service()
+    settings = service._load_settings()
+    provider = settings.get("tts_provider")
+    if not settings.get("tts_enabled", True) or provider not in {"local"} and not (
+            isinstance(provider, str) and provider.startswith("endpoint:")):
+        raise HTTPException(503, "Configure local or endpoint TTS before generating narration")
+    raw = service.synthesize(text)
+    if not raw:
+        raise HTTPException(503, "Speech synthesis failed; check the configured TTS provider")
+    if len(raw) > 25_000_000:
+        raise HTTPException(413, "Generated narration exceeds 25 MB")
+    extension = ".wav" if raw.startswith(b"RIFF") else ".mp3"
+    return _attach_narration(directory, timeline, clip, shot_id, raw, extension,
+                             narration_text=text)
+
+
+def _attach_narration(directory: Path, timeline: dict, clip: dict, shot_id: str,
+                      raw: bytes, extension: str, narration_text: str | None = None):
+    if not raw:
+        raise HTTPException(422, "Narration audio is empty")
     audio_dir = directory / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
     filename = uuid.uuid4().hex + extension
@@ -235,6 +282,10 @@ def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
     clip["audio_path"] = f"audio/{filename}"
     clip["audio_offset"] = 0.0
     clip["placeholder"] = False
+    if narration_text is not None:
+        clip["text"] = narration_text
+        caption = next(item for item in timeline["tracks"]["captions"] if item["id"] == shot_id)
+        caption["text"] = narration_text
     timeline["revision"] = int(timeline.get("revision") or 1) + 1
     try:
         render_preview(timeline, directory, ffmpeg=ffmpeg)
@@ -242,6 +293,7 @@ def upload_shot_narration(request: Request, episode_id: str, shot_id: str,
         source.unlink(missing_ok=True)
         raise HTTPException(503, str(error)) from error
     save_timeline(timeline, directory)
+    episode_id = timeline["episode_id"]
     return {"timeline": timeline,
             "preview_url": f"/api/studio/episodes/{episode_id}/preview",
             "audio_url": f"/api/studio/episodes/{episode_id}/shots/{shot_id}/narration"}
