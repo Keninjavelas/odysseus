@@ -76,3 +76,40 @@ def test_saved_case_replay_and_compare_are_private(eval_db):
     with pytest.raises(HTTPException) as denied:
         eval_routes.get_run(bob, first["id"])
     assert denied.value.status_code == 404
+
+
+def test_profile_budget_uses_peak_recorded_round_and_safety_margin():
+    trace = decode_native_trace([
+        {"sse": 'data: ' + json.dumps({"type": "tool_routing_audit", "round": 1,
+            "prompt_tokens_estimate": 2000, "tool_schema_tokens_estimate": 250,
+            "tool_schema_count": 3}) + "\n\n"},
+        {"sse": 'data: ' + json.dumps({"type": "tool_routing_audit", "round": 2,
+            "prompt_tokens_estimate": 3100, "tool_schema_tokens_estimate": 200,
+            "tool_schema_count": 2}) + "\n\n"},
+        {"sse": 'data: ' + json.dumps({"type": "metrics", "data": {
+            "request_context_tokens": 3300, "context_length": 8192}}) + "\n\n"},
+        {"sse": "data: [DONE]\n\n"},
+    ], run_id="profile-test")
+    budget = grade_trace(trace, expected_tools=[], forbidden_tools=[],
+                         required_text="", response_text="")["profile_budget"]
+    assert budget["source"] == "routing_audit"
+    assert budget["rounds_observed"] == 2
+    assert budget["request_tokens_estimate"] == 3300
+    assert budget["prompt_tokens_estimate"] == 3100
+    assert budget["tool_schema_tokens_estimate"] == 200
+    assert budget["profiles"]["4k"]["fits_recorded_request"] is False
+    assert budget["profiles"]["8k"]["fits_recorded_request"] is True
+    assert budget["recorded_context_window"] == 8192
+
+
+def test_profile_budget_falls_back_to_final_metrics_without_audit():
+    trace = decode_native_trace([
+        {"sse": 'data: ' + json.dumps({"type": "metrics", "data": {
+            "request_context_tokens": 900}}) + "\n\n"},
+        {"sse": "data: [DONE]\n\n"},
+    ], run_id="profile-fallback")
+    budget = grade_trace(trace, expected_tools=[], forbidden_tools=[],
+                         required_text="", response_text="")["profile_budget"]
+    assert budget["source"] == "final_metrics"
+    assert budget["prompt_tokens_estimate"] is None
+    assert budget["profiles"]["4k"]["fits_recorded_request"] is True

@@ -305,8 +305,24 @@
     if (Object.keys(measures).length) {
       target.append(node('p', `Time: ${measures.response_time ?? '—'}s · Tokens: ${measures.total_tokens ?? '—'} · Context: ${measures.context_percent ?? '—'}%`));
     }
+    appendProfileBudget(target, result.grade, true);
     $('history-case').value = caseId;
     await loadRunHistory();
+  }
+  function appendProfileBudget(target, grade, expanded = false) {
+    const budget = grade.profile_budget;
+    if (!budget) return;
+    const details = node('details');
+    details.open = expanded;
+    details.append(node('summary', `Recorded request: ~${budget.request_tokens_estimate} tokens · 4k / 8k / 16k fit`));
+    const prompt = budget.prompt_tokens_estimate == null ? 'unavailable' : `~${budget.prompt_tokens_estimate}`;
+    const schemas = budget.tool_schema_tokens_estimate == null ? 'unavailable' : `~${budget.tool_schema_tokens_estimate}`;
+    details.append(node('p', `Prompt: ${prompt} · Tool schemas: ${schemas} · ${budget.rounds_observed} audited round(s).`));
+    for (const [name, profile] of Object.entries(budget.profiles)) {
+      details.append(node('p', `${name}: ${profile.fits_recorded_request ? 'fits' : 'over budget'} · ${profile.utilization_percent}% used · ${profile.remaining_after_margin} tokens after safety margin`));
+    }
+    details.append(node('small', 'Estimates compare the recorded request without compaction or tool rerouting. A model must support the selected window; this is not a rerun.'));
+    target.append(details);
   }
   async function loadRunHistory() {
     const caseId = $('history-case').value;
@@ -320,6 +336,7 @@
       const measures = item.grade.measurements || {};
       card.append(node('h4', `${item.grade.passed ? 'Passed' : 'Needs review'} · ${item.model_label || 'Unlabeled model'}`),
                   node('small', `${item.created_at || ''} · ${item.grade.tool_count} tools · ${measures.total_tokens ?? '—'} tokens · ${measures.response_time ?? '—'}s`));
+      appendProfileBudget(card, item.grade);
       list.append(card);
       for (const select of [left, right]) {
         const option = node('option', `${item.model_label || 'Unlabeled'} · ${item.created_at || item.id}`);

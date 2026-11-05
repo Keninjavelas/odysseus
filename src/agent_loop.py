@@ -19076,6 +19076,8 @@ def _tool_routing_audit_payload(
     transport: str = "unknown",
     system_prompt_chars: Optional[int] = None,
     tool_schema_chars: Optional[int] = None,
+    tool_schema_tokens: Optional[int] = None,
+    tool_schema_count: Optional[int] = None,
     offering_suppressed_reason: Optional[str] = None,
 ) -> dict[str, Any]:
     """Return a non-sensitive trace of each tool-routing stage."""
@@ -19121,6 +19123,14 @@ def _tool_routing_audit_payload(
         "tool_schema_chars": (
             max(0, int(tool_schema_chars))
             if tool_schema_chars is not None else None
+        ),
+        "tool_schema_tokens_estimate": (
+            max(0, int(tool_schema_tokens))
+            if tool_schema_tokens is not None else None
+        ),
+        "tool_schema_count": (
+            max(0, int(tool_schema_count))
+            if tool_schema_count is not None else None
         ),
     }
 
@@ -26498,6 +26508,7 @@ async def stream_agent_loop(
             _routing_intentional_exclusions.update(
                 _selected_for_audit - _artifact_allowed_for_audit
             )
+        from src.generation_budget import estimate_tool_schema_tokens
         _routing_audit = _tool_routing_audit_payload(
             round_num=round_num,
             retrieved_tools=_base_relevant_tools,
@@ -26543,6 +26554,8 @@ async def stream_agent_loop(
                 if message.get("role") == "system"
             ),
             tool_schema_chars=len(json.dumps(all_tool_schemas or [], sort_keys=True)),
+            tool_schema_tokens=estimate_tool_schema_tokens(all_tool_schemas),
+            tool_schema_count=len(all_tool_schemas or []),
         )
         logger.info("[agent-routing-audit] %s", json.dumps(_routing_audit, sort_keys=True))
         yield f'data: {json.dumps(_routing_audit)}\n\n'

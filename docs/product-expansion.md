@@ -91,8 +91,11 @@ product experience described later in the roadmap is complete.
    browsing, other document retrieval, uploads, and media outside Studio still
    need a full isolation audit and filters.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
-   run saved eval cases against each profile. The settings switch and budget
-   cap work today; the comparative dashboard remains to build.
+   run saved eval cases against each profile. Graded runs now record the peak
+   prompt and tool-schema estimates from routing audits and compare that
+   recorded request with 4k/8k/16k caps plus the runtime safety margin in
+   Project Lab. This comparison does not rerun or reshape the request;
+   repeatable live sweeps across profiles remain to build.
 3. **Evaluation measurement and view.** Add cost and provider-verified latency
    metrics, repeatable model and profile sweeps, and trend charts across runs.
    The current live runner uses plan mode, so effectful tool workflows still

@@ -16,6 +16,8 @@ def test_tool_routing_audit_preserves_each_stage_and_gap():
         transport="native_schema",
         system_prompt_chars=2400,
         tool_schema_chars=3600,
+        tool_schema_tokens=1100,
+        tool_schema_count=4,
     )
     assert payload["retrieved_tools"] == ["private_browser", "read_file", "write_file"]
     assert payload["selected_tools"] == ["private_browser", "read_file", "write_file"]
@@ -26,6 +28,8 @@ def test_tool_routing_audit_preserves_each_stage_and_gap():
     assert payload["transport"] == "native_schema"
     assert payload["system_prompt_chars"] == 2400
     assert payload["tool_schema_chars"] == 3600
+    assert payload["tool_schema_tokens_estimate"] == 1100
+    assert payload["tool_schema_count"] == 4
 
 
 def test_tool_routing_audit_distinguishes_unknown_retrieval_from_empty():
