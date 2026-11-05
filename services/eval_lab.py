@@ -84,8 +84,14 @@ def grade_trace(trace: CanonicalTrace, *, expected_tools: list[str],
                     if event.kind == TraceKind.RUNTIME and event.payload.get("type") == "metrics"), {})
     measurements = {key: metrics.get(key) for key in
                     ("response_time", "input_tokens", "output_tokens", "total_tokens",
-                     "request_context_tokens", "context_length", "context_percent")
-                    if isinstance(metrics.get(key), (int, float))}
+                     "request_context_tokens", "context_length", "context_percent",
+                     "cost_usd", "time_to_first_token")
+                    if isinstance(metrics.get(key), (int, float))
+                    and not isinstance(metrics.get(key), bool)}
+    for key in ("cost_source", "usage_source"):
+        if metrics.get(key) in ({"reported", "estimated"} if key == "cost_source"
+                                else {"real", "estimated", "mixed"}):
+            measurements[key] = metrics[key]
     profile_budget = profile_budget_from_trace(trace, metrics)
     return {"passed": all(checks.values()), "checks": checks,
             "actual_tools": tools, "tool_count": len(tools),

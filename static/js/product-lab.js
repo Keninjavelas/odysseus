@@ -304,6 +304,9 @@
     const measures = result.grade.measurements || {};
     if (Object.keys(measures).length) {
       target.append(node('p', `Time: ${measures.response_time ?? '—'}s · Tokens: ${measures.total_tokens ?? '—'} · Context: ${measures.context_percent ?? '—'}%`));
+      if (typeof measures.cost_usd === 'number') {
+        target.append(node('p', `Cost: $${measures.cost_usd.toFixed(6)} (${measures.cost_source || 'source unknown'})`));
+      }
     }
     appendProfileBudget(target, result.grade, true);
     $('history-case').value = caseId;
@@ -324,18 +327,78 @@
     details.append(node('small', 'Estimates compare the recorded request without compaction or tool rerouting. A model must support the selected window; this is not a rerun.'));
     target.append(details);
   }
+  const svgElement = (tag, attributes = {}) => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, String(value));
+    return element;
+  };
+  function renderTrendChart(target, runs, key, label, format) {
+    const card = node('div', undefined, 'trend-chart');
+    card.append(node('h4', label));
+    const points = runs.slice(0, 30).reverse().filter((item) =>
+      typeof item.grade?.measurements?.[key] === 'number' &&
+      Number.isFinite(item.grade.measurements[key]));
+    if (!points.length) {
+      card.append(node('p', 'No recorded values yet.'));
+      target.append(card);
+      return;
+    }
+    const width = 680, height = 170, left = 44, right = 16, top = 18, bottom = 32;
+    const maximum = Math.max(...points.map((item) => item.grade.measurements[key]));
+    const scale = maximum > 0 ? maximum : 1;
+    const x = (index) => left + index * (width - left - right) / Math.max(1, points.length - 1);
+    const y = (value) => height - bottom - value / scale * (height - top - bottom);
+    const svg = svgElement('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img',
+      'aria-label': `${label} across ${points.length} recorded runs, oldest to newest` });
+    for (const fraction of [0, 0.5, 1]) {
+      const value = scale * fraction, lineY = y(value);
+      svg.append(svgElement('line', { x1: left, y1: lineY, x2: width - right,
+        y2: lineY, class: 'trend-grid' }));
+      const tick = svgElement('text', { x: left - 7, y: lineY + 4,
+        'text-anchor': 'end', class: 'trend-label' });
+      tick.textContent = format(value);
+      svg.append(tick);
+    }
+    if (points.length > 1) {
+      const path = svgElement('polyline', { points: points.map((item, index) =>
+        `${x(index)},${y(item.grade.measurements[key])}`).join(' '), class: 'trend-line' });
+      svg.append(path);
+    }
+    points.forEach((item, index) => {
+      const circle = svgElement('circle', { cx: x(index), cy: y(item.grade.measurements[key]),
+        r: 5, class: item.grade.passed ? 'trend-point passed' : 'trend-point failed' });
+      const title = svgElement('title');
+      const source = key === 'cost_usd' ? ` · ${item.grade.measurements.cost_source || 'source unknown'}` : '';
+      title.textContent = `${item.created_at || 'Unknown date'} · ${item.model_label || 'Unlabeled'} · ${format(item.grade.measurements[key])}${source} · ${item.grade.passed ? 'passed' : 'needs review'}`;
+      circle.append(title);
+      svg.append(circle);
+    });
+    card.append(svg);
+    target.append(card);
+  }
+  function renderRunTrends(runs) {
+    const target = $('run-trends'); target.replaceChildren();
+    if (!runs.length) return;
+    const passed = runs.filter((item) => item.grade.passed).length;
+    target.append(node('p', `${passed}/${runs.length} recorded runs passed. Charts show the latest 30 runs in time order; dots mark pass or review status.`));
+    renderTrendChart(target, runs, 'response_time', 'Run time (seconds)', (value) => `${Number(value.toFixed(1))}s`);
+    renderTrendChart(target, runs, 'total_tokens', 'Total tokens', (value) => String(Math.round(value)));
+    renderTrendChart(target, runs, 'cost_usd', 'Cost (USD)', (value) => `$${value.toFixed(4)}`);
+  }
   async function loadRunHistory() {
     const caseId = $('history-case').value;
     const list = $('run-history'); list.replaceChildren();
+    $('run-trends').replaceChildren();
     const left = $('compare-left'), right = $('compare-right');
     left.replaceChildren(); right.replaceChildren(); $('compare-result').replaceChildren();
     if (!caseId) { list.append(node('p', 'Save a case first.')); return; }
     const runs = await api(`/api/evals/cases/${caseId}/runs`);
+    renderRunTrends(runs);
     for (const item of runs) {
       const card = node('article', undefined, 'card');
       const measures = item.grade.measurements || {};
       card.append(node('h4', `${item.grade.passed ? 'Passed' : 'Needs review'} · ${item.model_label || 'Unlabeled model'}`),
-                  node('small', `${item.created_at || ''} · ${item.grade.tool_count} tools · ${measures.total_tokens ?? '—'} tokens · ${measures.response_time ?? '—'}s`));
+                  node('small', `${item.created_at || ''} · ${item.grade.tool_count} tools · ${measures.total_tokens ?? '—'} tokens · ${measures.response_time ?? '—'}s · ${typeof measures.cost_usd === 'number' ? `$${measures.cost_usd.toFixed(6)} ${measures.cost_source || ''}` : 'cost unavailable'}`));
       appendProfileBudget(card, item.grade);
       list.append(card);
       for (const select of [left, right]) {
@@ -356,7 +419,7 @@
     const formatDelta = (value, unit = '') => value == null ? 'unavailable' :
       `${value >= 0 ? '+' : ''}${Number(value.toFixed(2))}${unit}`;
     target.append(node('p', `Pass: ${compared.left.grade.passed} → ${compared.right.grade.passed}`),
-                  node('p', `Tool calls: ${formatDelta(compared.delta.tool_count)} · Time: ${formatDelta(compared.delta.response_time, 's')} · Tokens: ${formatDelta(compared.delta.total_tokens)}`));
+                  node('p', `Tool calls: ${formatDelta(compared.delta.tool_count)} · Time: ${formatDelta(compared.delta.response_time, 's')} · Tokens: ${formatDelta(compared.delta.total_tokens)} · Cost: ${formatDelta(compared.delta.cost_usd, ' USD')}`));
     for (const [name, passed] of Object.entries(compared.right.grade.checks)) {
       if (compared.left.grade.checks[name] !== passed) {
         target.append(node('p', `${name.replaceAll('_', ' ')}: ${compared.left.grade.checks[name]} → ${passed}`));

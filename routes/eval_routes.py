@@ -181,6 +181,7 @@ def compare_runs(request: Request, left_id: str, right_id: str):
                 "delta": {"tool_count": runs[1].grade_json["tool_count"] - runs[0].grade_json["tool_count"],
                           "response_time": measurement_delta("response_time"),
                           "total_tokens": measurement_delta("total_tokens"),
+                          "cost_usd": measurement_delta("cost_usd"),
                           "passed": [runs[0].grade_json["passed"], runs[1].grade_json["passed"]]}}
     finally:
         db.close()

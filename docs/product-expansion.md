@@ -103,10 +103,13 @@ product experience described later in the roadmap is complete.
    evaluation chat and graded run for each cap. The comparison itself does not
    rerun or reshape the recorded request; broader model sweeps and trend views
    remain to build.
-3. **Evaluation measurement and view.** Add cost and provider-verified latency
-   metrics, repeatable model and profile sweeps, and trend charts across runs.
-   The current live runner uses plan mode, so effectful tool workflows still
-   need isolated disposable fixtures before they can be evaluated safely.
+3. **Evaluation measurement and view.** Graded runs now retain reported or
+   estimated USD cost when the runtime knows it, and Project Lab charts run
+   time, tokens, and cost over the latest 30 runs of a saved case. Profile
+   sweeps are available. Provider-verified latency, broader model sweeps, and
+   cost aggregation across multiple routed models remain to build. The live
+   runner uses plan mode, so effectful tool workflows still need isolated
+   disposable fixtures before they can be evaluated safely.
 4. **Automatic action extraction.** Connect meeting pipelines to the review
    queue with verifiable source deep links. Email, note, document, and saved
    research report extraction handle explicit task markers; unmarked prose,
