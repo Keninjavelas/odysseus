@@ -29,8 +29,9 @@
   }));
 
   async function loadProjects() {
-    const [notesResult, documentsResult] = await Promise.all([
+    const [notesResult, documentsResult, researchResult] = await Promise.all([
       api('/api/notes'), api('/api/documents/library?limit=50'),
+      api('/api/research/library?limit=50'),
     ]);
     [state.projects, state.sessions] = await Promise.all([api('/api/projects'), api('/api/sessions')]);
     const modelSelect = $('live-eval-form').elements.source_session;
@@ -41,6 +42,7 @@
     }
     const assignableNotes = (notesResult.notes || []).filter((note) => !note.project_id || state.projects.some((project) => project.id === note.project_id));
     const assignableDocuments = (documentsResult.documents || []).filter((doc) => !doc.project_id || state.projects.some((project) => project.id === doc.project_id));
+    const assignableResearch = (researchResult.research || []).filter((report) => !report.project_id || state.projects.some((project) => project.id === report.project_id));
     const list = $('project-list'); list.replaceChildren();
     if (!state.projects.length) list.append(node('p', 'No projects yet.'));
     for (const project of state.projects) {
@@ -96,6 +98,30 @@
         await loadProjects();
       }));
       documentActions.append(documentSelect, assignDocument); card.append(documentActions);
+      const researchActions = node('div', undefined, 'card-actions');
+      const researchSelect = node('select');
+      researchSelect.append(node('option', 'Choose a recent report')); researchSelect.firstChild.value = '';
+      assignableResearch.filter((report) => !report.project_id || report.project_id === project.id).forEach((report) => {
+        const option = node('option', `${report.query || 'Untitled'}${report.project_id ? ' · assigned' : ''}`);
+        option.value = report.id; researchSelect.append(option);
+      });
+      const assignResearch = node('button', 'Assign report');
+      assignResearch.addEventListener('click', () => run(async () => {
+        if (!researchSelect.value) throw new Error('Choose a report first.');
+        await api(`/api/research/${encodeURIComponent(researchSelect.value)}/project`,
+                  jsonOptions('PATCH', { project_id: project.id }));
+        await loadProjects();
+      }));
+      const removeResearch = node('button', 'Move report to General');
+      removeResearch.addEventListener('click', () => run(async () => {
+        if (!researchSelect.value) throw new Error('Choose an assigned report first.');
+        const report = assignableResearch.find((item) => item.id === researchSelect.value);
+        if (report?.project_id !== project.id) throw new Error('Choose a report assigned to this project.');
+        await api(`/api/research/${encodeURIComponent(researchSelect.value)}/project`,
+                  jsonOptions('PATCH', { project_id: null }));
+        await loadProjects();
+      }));
+      researchActions.append(researchSelect, assignResearch, removeResearch); card.append(researchActions);
     }
   }
   $('project-form').addEventListener('submit', (event) => {

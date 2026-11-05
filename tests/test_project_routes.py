@@ -1,5 +1,6 @@
 """Project assignment never crosses account ownership boundaries."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -11,10 +12,11 @@ from sqlalchemy.pool import StaticPool
 
 from core.database import Base, Document, Note, Project, Session
 from routes import project_routes
+from routes.research import research_routes
 
 
 @pytest.fixture
-def project_db(monkeypatch):
+def project_db(monkeypatch, tmp_path):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
                            poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[Project.__table__, Session.__table__, Note.__table__,
@@ -22,11 +24,12 @@ def project_db(monkeypatch):
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(project_routes, "SessionLocal", factory)
     monkeypatch.setattr(project_routes, "effective_user", lambda request: request.owner)
+    monkeypatch.setattr(research_routes, "_research_storage_root", lambda: tmp_path)
     yield factory
     engine.dispose()
 
 
-def test_project_membership_is_owner_scoped(project_db):
+def test_project_membership_is_owner_scoped(project_db, tmp_path):
     alice = SimpleNamespace(owner="alice")
     bob = SimpleNamespace(owner="bob")
     created = project_routes.create_project(alice, project_routes.ProjectInput(name="Film edit"))
@@ -62,7 +65,14 @@ def test_project_membership_is_owner_scoped(project_db):
     assert project_routes.list_projects(alice)[0]["document_count"] == 1
     assert project_routes.list_projects(bob) == []
 
+    for rid, owner in (("alice-report", "alice"), ("bob-report", "bob")):
+        (tmp_path / f"{rid}.json").write_text(json.dumps({
+            "owner": owner, "project_id": created["id"], "result": "Report",
+        }), encoding="utf-8")
+
     project_routes.delete_project(alice, created["id"])
+    assert json.loads((tmp_path / "alice-report.json").read_text(encoding="utf-8"))["project_id"] is None
+    assert json.loads((tmp_path / "bob-report.json").read_text(encoding="utf-8"))["project_id"] == created["id"]
     with project_db() as db:
         assert db.get(Session, "alice-chat").project_id is None
         assert db.get(Session, "bob-chat").project_id is None

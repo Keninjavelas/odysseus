@@ -70,6 +70,45 @@ def _find_owned_research_path(session_id: str, user: str) -> Path | None:
     return path
 
 
+def _write_research_json(path: Path, data: dict) -> None:
+    """Replace a report atomically so readers never see a partial JSON file."""
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(json.dumps(data), encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _restore_research_projects(changes: list[tuple[Path, dict]]) -> None:
+    for path, data in changes:
+        _write_research_json(path, data)
+
+
+def _clear_owned_research_project(user: str, project_id: str) -> list[tuple[Path, dict]]:
+    """Unassign saved reports when their owner deletes a project."""
+    root = _research_storage_root()
+    changed = []
+    for stored_path in root.glob("*.json"):
+        path = stored_path.resolve()
+        try:
+            path.relative_to(root)
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("owner") != user or data.get("project_id") != project_id:
+            continue
+        try:
+            _write_research_json(path, {**data, "project_id": None})
+        except Exception:
+            _restore_research_projects(changed)
+            raise
+        changed.append((path, data))
+    return changed
+
+
 logger = logging.getLogger(__name__)
 
 # Model-name substrings that are NOT chat/generation models — research must
@@ -489,6 +528,29 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         if data.get("owner") != user:
             raise HTTPException(404, "Research not found")
         return data
+
+    class ResearchProjectInput(BaseModel):
+        project_id: Optional[str] = None
+
+    @router.patch("/api/research/{session_id}/project")
+    async def research_assign_project(session_id: str, body: ResearchProjectInput, request: Request):
+        user = _require_user(request)
+        path = _find_owned_research_path(session_id, user)
+        if path is None:
+            raise HTTPException(404, "Research not found")
+        if body.project_id:
+            from core.database import Project, SessionLocal
+            with SessionLocal() as db:
+                project = db.query(Project).filter(
+                    Project.id == body.project_id, Project.owner == user).first()
+                if project is None:
+                    raise HTTPException(404, "Project not found")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("owner") != user:
+            raise HTTPException(404, "Research not found")
+        data["project_id"] = body.project_id or None
+        _write_research_json(path, data)
+        return {"id": session_id, "project_id": data["project_id"]}
 
     @router.post("/api/research/{session_id}/archive")
     async def research_archive(session_id: str, request: Request, archived: bool = Query(True)):

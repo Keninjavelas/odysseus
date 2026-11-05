@@ -167,6 +167,43 @@ async def test_research_start_binds_owner_and_uses_quick_chat_default_only(store
 
 
 @pytest.mark.asyncio
+async def test_saved_research_can_be_reassigned_only_to_owned_project(store, tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    import httpx
+    from routes.research import research_routes
+
+    monkeypatch.setenv('AUTH_ENABLED', 'false')
+    monkeypatch.setattr(research_routes, '_research_storage_root', lambda: tmp_path)
+    with store() as db:
+        db.add(database.Project(id='film', owner='alice', name='Film'))
+        db.add(database.Project(id='private', owner='bob', name='Private'))
+        db.commit()
+    (tmp_path / 'rp-owned.json').write_text(json.dumps({
+        'owner': 'alice', 'project_id': None, 'query': 'Project report',
+        'result': 'TODO: Review source',
+    }), encoding='utf-8')
+    (tmp_path / 'rp-foreign.json').write_text(json.dumps({
+        'owner': 'bob', 'project_id': None, 'query': 'Private report',
+    }), encoding='utf-8')
+    app = FastAPI()
+    @app.middleware('http')
+    async def identify(request, call_next):
+        request.state.current_user = 'alice'
+        return await call_next(request)
+    app.include_router(research_routes.setup_research_routes(object()))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        route = '/api/research/rp-owned/project'
+        assigned = await client.patch(route, json={'project_id': 'film'})
+        assert assigned.status_code == 200 and assigned.json()['project_id'] == 'film'
+        assert (await client.patch(route, json={'project_id': 'private'})).status_code == 404
+        assert (await client.patch('/api/research/rp-foreign/project',
+                                   json={'project_id': 'film'})).status_code == 404
+        cleared = await client.patch(route, json={'project_id': None})
+        assert cleared.status_code == 200 and cleared.json()['project_id'] is None
+    assert json.loads((tmp_path / 'rp-owned.json').read_text(encoding='utf-8'))['project_id'] is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('rounds', [None, 0, 5])
 async def test_tool_cannot_spoof_origin_and_defaults_to_two_rounds(monkeypatch, rounds):
     import httpx

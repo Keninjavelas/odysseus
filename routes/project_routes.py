@@ -93,6 +93,7 @@ def update_project(request: Request, project_id: str, payload: ProjectInput):
 def delete_project(request: Request, project_id: str):
     owner = effective_user(request)
     db = SessionLocal()
+    research_changes = []
     try:
         project = _owned_project(db, project_id, owner)
         # Deleting a container keeps its conversations; they become unassigned.
@@ -102,9 +103,17 @@ def delete_project(request: Request, project_id: str):
             {Note.project_id: None}, synchronize_session=False)
         db.query(Document).filter(Document.owner == owner, Document.project_id == project_id).update(
             {Document.project_id: None}, synchronize_session=False)
+        from routes.research.research_routes import _clear_owned_research_project
+        research_changes = _clear_owned_research_project(owner, project_id)
         db.delete(project)
         db.commit()
         return {"deleted": project_id}
+    except Exception:
+        db.rollback()
+        if research_changes:
+            from routes.research.research_routes import _restore_research_projects
+            _restore_research_projects(research_changes)
+        raise
     finally:
         db.close()
 

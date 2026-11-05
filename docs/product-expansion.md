@@ -25,7 +25,9 @@ product experience described later in the roadmap is complete.
   that assignment with its report. Standalone research can select a project
   when it starts, and the research library API can filter by project. The
   `manage_research` agent tool lists, reads, and deletes only reports owned by
-  the current user and assigned to the current chat's project.
+  the current user and assigned to the current chat's project. Saved reports
+  can be reassigned in Project Lab; deleting a project returns its reports to
+  General along with its chats, notes, and documents.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
   also be assigned to a project; the Notes agent tool reads and writes within
