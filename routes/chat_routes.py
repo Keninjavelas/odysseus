@@ -1871,7 +1871,8 @@ def _is_image_generation_session(sess, owner: str | None = None) -> bool:
     return False
 
 
-def _first_image_attachment(chat_handler, att_ids: List[str], owner: str | None = None) -> Optional[Dict[str, Any]]:
+def _first_image_attachment(chat_handler, att_ids: List[str], owner: str | None = None,
+                            project_id: str | None = None) -> Optional[Dict[str, Any]]:
     """Return the first attached image file that this owner can read."""
     upload_handler = getattr(chat_handler, "upload_handler", None)
     if not upload_handler:
@@ -1882,7 +1883,8 @@ def _first_image_attachment(chat_handler, att_ids: List[str], owner: str | None 
         except Exception as e:
             logger.warning("Failed to resolve image edit upload %s", att_id, exc_info=e)
             continue
-        if not info:
+        from src.project_context import project_visible_upload
+        if not project_visible_upload(info, owner, project_id):
             continue
         name = info.get("name") or info.get("original_name") or info.get("id") or ""
         mime = info.get("mime", "")
@@ -4257,7 +4259,9 @@ def setup_chat_routes(
             _terminal_saved = False
             if image_generation_session:
                 from src.settings import get_setting
-                _image_upload = _first_image_attachment(chat_handler, att_ids, owner=_user)
+                _image_upload = _first_image_attachment(
+                    chat_handler, att_ids, owner=_user,
+                    project_id=getattr(sess, "project_id", None))
                 _image_tool_name = "edit_image" if _image_upload else "generate_image"
                 _blocked_image_tool = next((
                     name for name in dict.fromkeys(("generate_image", _image_tool_name))

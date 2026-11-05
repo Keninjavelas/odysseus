@@ -16,7 +16,8 @@ from typing import Dict, Optional
 from src.tools._common import _parse_tool_args
 
 
-async def do_edit_image(content: str, owner: Optional[str] = None, *, incognito: bool = False) -> Dict:
+async def do_edit_image(content: str, owner: Optional[str] = None, *, incognito: bool = False,
+                        session_id: Optional[str] = None) -> Dict:
     """Create an owner-scoped edited copy of a gallery image."""
     try:
         args = _parse_tool_args(content)
@@ -38,6 +39,10 @@ async def do_edit_image(content: str, owner: Optional[str] = None, *, incognito:
         ref = re.fullmatch(r'odysseus://attachment/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?)', image_id)
         handler = get_upload_handler()
         info = handler.resolve_upload(ref[1], owner=owner, allow_admin=False) if ref and owner and handler else None
+        if info:
+            from src.project_context import project_visible_upload, session_project_id
+            if not project_visible_upload(info, owner, session_project_id(session_id, owner)):
+                info = None
         if not info or not info.get('path') or not handler.is_image_file(info.get('name') or info.get('id') or ref[1], info.get('mime', '')):
             return {'error': 'Uploaded image not found or not accessible', 'exit_code': 1}
         if action != 'prompt':

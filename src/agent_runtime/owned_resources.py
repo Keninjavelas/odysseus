@@ -100,7 +100,9 @@ def _attachment(identifier, owner, thread):
     if handler is None:
         raise ResourceIdentityError("Attachment store is unavailable")
     info = handler.resolve_upload(identifier, owner=owner, allow_admin=False)
-    if not isinstance(info, dict) or info.get("id") != identifier or info.get("owner") != owner:
+    from src.project_context import project_visible_upload, session_project_id
+    if (not isinstance(info, dict) or info.get("id") != identifier
+            or not project_visible_upload(info, owner, session_project_id(thread, owner))):
         raise ResourceIdentityError("Attachment ownership is unresolved")
     root = FilesystemRoot.seal(handler.upload_dir, scope=FilesystemScope.PRIVATE, owner=owner)
     file = FilesystemResource.resolve(root, info.get("path"))

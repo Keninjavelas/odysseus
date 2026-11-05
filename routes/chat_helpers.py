@@ -815,7 +815,8 @@ async def preprocess(
     )
 
 
-def build_uploaded_file_manifest(att_ids: list, upload_handler, owner: Optional[str]) -> list[dict]:
+def build_uploaded_file_manifest(att_ids: list, upload_handler, owner: Optional[str],
+                                 project_id: Optional[str] = None) -> list[dict]:
     """Resolve current-turn upload IDs into a small tool-facing manifest.
 
     The chat UI already sends attachment ids, and preprocessing inlines as much
@@ -843,6 +844,9 @@ def build_uploaded_file_manifest(att_ids: list, upload_handler, owner: Optional[
             logger.debug("Failed to resolve upload %r for agent manifest", att_id, exc_info=True)
             continue
         if not isinstance(info, dict):
+            continue
+        from src.project_context import project_visible_upload
+        if not project_visible_upload(info, owner, project_id):
             continue
 
         path = info.get("path")
@@ -1301,6 +1305,7 @@ async def build_chat_context(
         att_ids or [],
         getattr(chat_handler, "upload_handler", None),
         getattr(sess, "owner", None),
+        getattr(sess, "project_id", None),
     )
     context_message = (
         str(continuation_context_message).strip()

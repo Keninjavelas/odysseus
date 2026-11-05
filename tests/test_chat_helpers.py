@@ -270,12 +270,17 @@ def test_build_uploaded_file_manifest_filters_and_nulls_unreadable_paths(monkeyp
                 "owner": "alice",
             },
             "bad": ["not", "a", "dict"],
+            "other-project": {
+                "id": "other-project", "name": "good.txt", "path": str(good),
+                "owner": "alice", "project_bound": True, "project_id": "project-b",
+            },
         })
 
         manifest = build_uploaded_file_manifest(
-            ["good", "bob", "outside", "missing", "bad"],
+            ["good", "bob", "outside", "missing", "bad", "other-project"],
             handler,
             owner="alice",
+            project_id="project-a",
         )
 
         assert [item["id"] for item in manifest] == ["good", "outside", "missing"]
@@ -292,6 +297,7 @@ def test_build_uploaded_file_manifest_filters_and_nulls_unreadable_paths(monkeyp
             ("outside", "alice"),
             ("missing", "alice"),
             ("bad", "alice"),
+            ("other-project", "alice"),
         ]
     finally:
         shutil.rmtree(root, ignore_errors=True)

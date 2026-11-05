@@ -185,7 +185,8 @@ class ChatHandler:
         if effective_att_ids:
             for att_id in effective_att_ids:
                 fi = self.upload_handler.resolve_upload(att_id, owner=owner)
-                if fi:
+                from src.project_context import project_visible_upload
+                if project_visible_upload(fi, owner, getattr(sess, "project_id", None)):
                     files_by_id[att_id] = fi
 
             for att_id in effective_att_ids:

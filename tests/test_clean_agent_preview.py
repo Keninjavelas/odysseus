@@ -3927,7 +3927,7 @@ def test_history_rehydrates_most_recent_owner_checked_image_for_followup(monkeyp
             assert upload_id == 'a' * 32 + '.png'
             assert owner == 'alice'
             assert allow_admin is False
-            return {'path': str(image_path), 'mime': 'image/png', 'name': 'fixture.png'}
+            return {'path': str(image_path), 'mime': 'image/png', 'name': 'fixture.png', 'owner': 'alice'}
 
         def is_image_file(self, name, mime):
             return mime == 'image/png'
@@ -3958,7 +3958,7 @@ def test_history_trims_after_removing_raw_image_bytes(monkeypatch, tmp_path):
 
     class Uploads:
         def resolve_upload(self, upload_id, owner=None, allow_admin=True):
-            return {'path': str(image_path), 'mime': 'image/png', 'name': 'fixture.png'}
+            return {'path': str(image_path), 'mime': 'image/png', 'name': 'fixture.png', 'owner': 'alice'}
 
         def is_image_file(self, name, mime):
             return mime == 'image/png'

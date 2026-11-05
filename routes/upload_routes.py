@@ -369,6 +369,17 @@ def setup_upload_routes(upload_handler):
             
         client_ip = request.client.host if request.client else "unknown"
         out = []
+        upload_owner = effective_user(request)
+        if is_request_sentinel_owner(upload_owner):
+            upload_owner = None
+        upload_project_id = None
+        if session_id:
+            with SessionLocal() as db:
+                linked_session = db.query(DbSession).filter(
+                    DbSession.id == session_id, DbSession.owner == upload_owner).first()
+                if linked_session is None:
+                    raise HTTPException(404, "Session not found")
+                upload_project_id = linked_session.project_id
 
         # Limit concurrent uploads per IP. Count genuine recent upload events —
         # NOT the number of files in this batch. The previous check summed over
@@ -388,10 +399,13 @@ def setup_upload_routes(upload_handler):
         
         for u in files:
             try:
-                owner = effective_user(request)
-                if is_request_sentinel_owner(owner):
-                    owner = None
-                meta = upload_handler.save_upload(u, client_ip, owner=owner)
+                owner = upload_owner
+                if session_id:
+                    meta = upload_handler.save_upload(
+                        u, client_ip, owner=owner, session_id=session_id,
+                        project_id=upload_project_id)
+                else:
+                    meta = upload_handler.save_upload(u, client_ip, owner=owner)
                 promoted_gallery_id = _promote_chat_image_to_gallery(meta, owner, session_id, gallery_id)
                 item = {
                     "id": meta["id"],

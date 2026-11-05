@@ -2395,7 +2395,9 @@ async def _execute_tool_block_impl(
     elif tool == "edit_image":
         desc = "edit_image"
         image_privacy = (client_runtime_context or {}).get('web_ui_state', {}).get('incognito') is True
-        result = await dispatched(do_edit_image(content, owner=owner, **({'incognito': True} if image_privacy else {})))
+        result = await dispatched(do_edit_image(
+            content, owner=owner, session_id=session_id,
+            **({'incognito': True} if image_privacy else {})))
     elif tool == "edit_file":
         result = await dispatched(_direct_fallback(tool, content)) or {"error": "edit failed", "exit_code": 1}
         desc = result.get("output") or result.get("error") or "edit_file"

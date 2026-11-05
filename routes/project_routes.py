@@ -9,6 +9,7 @@ from core.database import Document, Note, Project, Session, SessionLocal
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 from src.constants import DATA_DIR
 from src.memory import MemoryManager
+from src.tool_utils import get_upload_handler
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"],
@@ -99,6 +100,8 @@ def delete_project(request: Request, project_id: str):
     studio_changes = []
     memory_manager = MemoryManager(DATA_DIR)
     memory_changes = []
+    upload_handler = get_upload_handler()
+    upload_changes = []
     try:
         project = _owned_project(db, project_id, owner)
         # Deleting a container keeps its conversations; they become unassigned.
@@ -110,6 +113,9 @@ def delete_project(request: Request, project_id: str):
             {Document.project_id: None}, synchronize_session=False)
         memory_changes = memory_manager.reassign_project(
             owner, None, from_project_id=project_id)
+        if upload_handler:
+            upload_changes = upload_handler.reassign_project(
+                owner, None, from_project_id=project_id)
         from routes.research.research_routes import _clear_owned_research_project
         research_changes = _clear_owned_research_project(owner, project_id)
         from routes.studio_routes import _clear_owned_studio_project
@@ -126,6 +132,8 @@ def delete_project(request: Request, project_id: str):
             from routes.studio_routes import _restore_studio_projects
             _restore_studio_projects(studio_changes)
         memory_manager.restore_project_assignments(memory_changes)
+        if upload_handler:
+            upload_handler.restore_project_assignments(upload_changes)
         raise
     finally:
         db.close()
@@ -137,6 +145,8 @@ def assign_session(request: Request, project_id: str, session_id: str):
     db = SessionLocal()
     memory_manager = MemoryManager(DATA_DIR)
     memory_changes = []
+    upload_handler = get_upload_handler()
+    upload_changes = []
     try:
         _owned_project(db, project_id, owner)
         session = db.query(Session).filter(Session.id == session_id, Session.owner == owner).first()
@@ -148,11 +158,16 @@ def assign_session(request: Request, project_id: str, session_id: str):
             {Document.project_id: project_id}, synchronize_session=False)
         memory_changes = memory_manager.reassign_project(
             owner, project_id, session_id=session_id)
+        if upload_handler:
+            upload_changes = upload_handler.reassign_project(
+                owner, project_id, session_id=session_id)
         db.commit()
         return {"session_id": session_id, "project_id": project_id}
     except Exception:
         db.rollback()
         memory_manager.restore_project_assignments(memory_changes)
+        if upload_handler:
+            upload_handler.restore_project_assignments(upload_changes)
         raise
     finally:
         db.close()
@@ -164,6 +179,8 @@ def unassign_session(request: Request, project_id: str, session_id: str):
     db = SessionLocal()
     memory_manager = MemoryManager(DATA_DIR)
     memory_changes = []
+    upload_handler = get_upload_handler()
+    upload_changes = []
     try:
         _owned_project(db, project_id, owner)
         session = db.query(Session).filter(Session.id == session_id,
@@ -177,11 +194,16 @@ def unassign_session(request: Request, project_id: str, session_id: str):
             {Document.project_id: None}, synchronize_session=False)
         memory_changes = memory_manager.reassign_project(
             owner, None, session_id=session_id)
+        if upload_handler:
+            upload_changes = upload_handler.reassign_project(
+                owner, None, session_id=session_id)
         db.commit()
         return {"session_id": session_id, "project_id": None}
     except Exception:
         db.rollback()
         memory_manager.restore_project_assignments(memory_changes)
+        if upload_handler:
+            upload_handler.restore_project_assignments(upload_changes)
         raise
     finally:
         db.close()

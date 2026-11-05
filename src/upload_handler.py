@@ -1061,7 +1061,8 @@ class UploadHandler:
         """
         file_hash = info.get("hash")
         if file_hash:
-            return f"{new_owner}:{file_hash}"
+            session_id = info.get("session_id")
+            return f"{new_owner}:{file_hash}:{session_id}" if session_id else f"{new_owner}:{file_hash}"
 
         # Fallback for rows without an explicit hash (should not happen in modern Odysseus)
         if isinstance(key, str) and ":" in key:
@@ -1195,6 +1196,43 @@ class UploadHandler:
             auth_manager=auth_manager,
             allow_admin=allow_admin,
         )
+
+    def reassign_project(self, owner: str, project_id: str | None,
+                         *, session_id: str | None = None,
+                         from_project_id: str | None = None) -> list[tuple[str, str | None]]:
+        """Move project-bound chat uploads when their session or project moves."""
+        index_path = os.path.join(self.upload_dir, "uploads.json")
+        with self._index_lock:
+            current = self._load_upload_index(fail_on_error=True)
+            updated = dict(current)
+            changes = []
+            for key, row in current.items():
+                if (not isinstance(row, dict) or row.get("owner") != owner
+                        or not row.get("project_bound")):
+                    continue
+                if session_id is not None and row.get("session_id") != session_id:
+                    continue
+                if from_project_id is not None and row.get("project_id") != from_project_id:
+                    continue
+                if row.get("project_id") == project_id:
+                    continue
+                changes.append((key, row.get("project_id")))
+                updated[key] = {**row, "project_id": project_id}
+            if changes:
+                self._atomic_write_json(index_path, updated, sync_backup=True)
+            return changes
+
+    def restore_project_assignments(self, changes: list[tuple[str, str | None]]) -> None:
+        if not changes:
+            return
+        index_path = os.path.join(self.upload_dir, "uploads.json")
+        with self._index_lock:
+            current = self._load_upload_index(fail_on_error=True)
+            updated = dict(current)
+            for key, old_project_id in changes:
+                if key in updated and isinstance(updated[key], dict):
+                    updated[key] = {**updated[key], "project_id": old_project_id}
+            self._atomic_write_json(index_path, updated, sync_backup=True)
     
     def cleanup_rate_limits(self):
         """Remove stale entries from upload_rate_log."""
@@ -1256,7 +1294,8 @@ class UploadHandler:
             logger.error(f"Failed to get upload stats: {e}")
             return {"error": str(e)}
     
-    def save_upload(self, u: UploadFile, client_ip: str, owner: str = None) -> dict:
+    def save_upload(self, u: UploadFile, client_ip: str, owner: str = None,
+                    *, session_id: str | None = None, project_id: str | None = None) -> dict:
         """Save uploaded file with enhanced security and organization."""
         # Rate limiting
         now = time.time()
@@ -1325,7 +1364,8 @@ class UploadHandler:
             existing_files = self._load_upload_index()
             stale_keys = []
             for key, info in existing_files.items():
-                if info.get("hash") == file_hash and info.get("owner") == owner:
+                if (info.get("hash") == file_hash and info.get("owner") == owner
+                        and info.get("session_id") == session_id):
                     stored_path = info.get("path")
                     if stored_path and os.path.exists(stored_path) and self._inside_upload_dir(stored_path):
                         existing_key = key
@@ -1352,7 +1392,8 @@ class UploadHandler:
                     live_key = existing_key
                     if live_key not in current:
                         for k, v in current.items():
-                            if v.get("hash") == file_hash and v.get("owner") == owner:
+                            if (v.get("hash") == file_hash and v.get("owner") == owner
+                                    and v.get("session_id") == session_id):
                                 live_key = k
                                 existing_file = v
                                 break
@@ -1384,6 +1425,9 @@ class UploadHandler:
                     "uploaded_at": existing_file["uploaded_at"],
                     "created_at": existing_file.get("created_at") or existing_file["uploaded_at"],
                     "owner": existing_file.get("owner"),
+                    "session_id": existing_file.get("session_id"),
+                    "project_id": existing_file.get("project_id"),
+                    "project_bound": existing_file.get("project_bound", False),
                     "width": existing_file.get("width"),
                     "height": existing_file.get("height"),
                     "is_duplicate": True
@@ -1420,6 +1464,9 @@ class UploadHandler:
             "last_accessed": created_at,
             "client_ip": client_ip,
             "owner": owner,
+            "session_id": session_id,
+            "project_id": project_id,
+            "project_bound": bool(session_id),
         }
         # Capture image dimensions (EXIF-rotated) so the chat thumbnail skeleton
         # can size itself to the right aspect ratio before the bytes arrive.
@@ -1437,7 +1484,7 @@ class UploadHandler:
         with self._index_lock:
             try:
                 current = self._load_upload_index() if os.path.exists(uploads_db_path) else {}
-                storage_key = f"{owner}:{file_hash}" if owner else file_hash
+                storage_key = f"{owner}:{file_hash}:{session_id}" if owner and session_id else f"{owner}:{file_hash}" if owner else file_hash
                 current[storage_key] = file_metadata
                 self._atomic_write_json(uploads_db_path, current)
             except Exception as e:

@@ -155,7 +155,7 @@ def test_uploaded_image_edit_uses_owner_scoped_reference(monkeypatch, tmp_path):
             resolutions.append((upload_id, kwargs))
             if kwargs['owner'] != 'alice':
                 return None
-            return {'path': str(path), 'name': 'upload.jpg', 'mime': 'image/jpeg'}
+            return {'path': str(path), 'name': 'upload.jpg', 'mime': 'image/jpeg', 'owner': 'alice'}
         def is_image_file(self, name, mime):
             return mime.startswith('image/')
     monkeypatch.setattr('src.tool_utils.get_upload_handler', lambda: Handler())

@@ -452,6 +452,11 @@ class ExtractTextTool:
                 bound_path = bound_attachment_path(owner, raw_path)
                 handler = get_upload_handler()
                 info = {"path": bound_path} if bound_path else handler.resolve_upload(ref[1], owner=owner, allow_admin=False) if ref and owner and handler else None
+                if info and not bound_path:
+                    from src.project_context import project_visible_upload, session_project_id
+                    if not project_visible_upload(
+                        info, owner, session_project_id((_ctx or {}).get('session_id'), owner)):
+                        info = None
                 if not info or not info.get('path'):
                     raise ValueError('Uploaded image not found or not accessible to this user')
                 path = Path(info['path'])

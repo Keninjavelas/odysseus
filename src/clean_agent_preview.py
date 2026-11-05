@@ -4037,7 +4037,8 @@ def readonly_call(name, args):
     return preview_call_allowed(name, args) and ToolEffect.WRITE_PRIVATE not in capability.effects
 
 
-def _rehydrate_recent_image(message, metadata, owner, *, max_images=3, max_bytes=12 * 1024 * 1024):
+def _rehydrate_recent_image(message, metadata, owner, *, project_id=None,
+                            max_images=3, max_bytes=12 * 1024 * 1024):
     """Restore recent owner-checked image refs for a multimodal follow-up."""
     if not owner:
         return 'no_owner'
@@ -4062,7 +4063,8 @@ def _rehydrate_recent_image(message, metadata, owner, *, max_images=3, max_bytes
             info = handler.resolve_upload(upload_id, owner=owner, allow_admin=False)
         except Exception:
             continue
-        if not info:
+        from src.project_context import project_visible_upload
+        if not project_visible_upload(info, owner, project_id):
             continue
         path = info.get('path')
         mime = str(info.get('mime') or item.get('mime') or '')
@@ -4219,7 +4221,9 @@ def conversation(history_session, messages, *, owner=None, diagnostics=None):
         user_message = group[0]
         metadata = user_message.pop('_attachment_metadata', {})
         if (metadata or {}).get('attachments'):
-            status = _rehydrate_recent_image(user_message, metadata, owner)
+            status = _rehydrate_recent_image(
+                user_message, metadata, owner,
+                project_id=getattr(history_session, 'project_id', None))
             if isinstance(diagnostics, dict):
                 diagnostics['image_rehydration'] = status
             break

@@ -88,8 +88,12 @@ product experience described later in the roadmap is complete.
    paths filter by project. Chat-originated research now carries a project, but
    memory recall and writes now distinguish global from project records.
    Studio episodes have project membership, while unfiltered manual research
-   browsing, other document retrieval, uploads, and media outside Studio still
-   need a full isolation audit and filters.
+   browsing, other document retrieval, and media outside Studio still
+   need a full isolation audit and filters. New chat uploads carry their
+   session and project, deduplicate within that session, and follow project
+   moves. Agent attachment identities and chat preprocessing now check the
+   active project. Legacy uploads stay global so existing references work;
+   remaining direct media paths still need an audit.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. Graded runs now record the peak
    prompt and tool-schema estimates from routing audits and compare that
