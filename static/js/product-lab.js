@@ -110,13 +110,27 @@
 
   async function loadActions() {
     const [actions, notesResult] = await Promise.all([api('/api/actions'), api('/api/notes')]);
-    state.notes = (notesResult.notes || []).filter((note) => note.note_type === 'checklist' && !note.archived);
+    const openNotes = (notesResult.notes || []).filter((note) => !note.archived);
+    state.notes = openNotes.filter((note) => note.note_type === 'checklist');
+    const sourceSelect = $('action-source-note'); sourceSelect.replaceChildren();
+    sourceSelect.append(node('option', 'Choose a source note')); sourceSelect.firstChild.value = '';
+    for (const note of openNotes) {
+      const option = node('option', note.title || 'Untitled note');
+      option.value = note.id; sourceSelect.append(option);
+    }
     const list = $('action-list'); list.replaceChildren();
     if (!actions.length) list.append(node('p', 'No pending proposals.'));
     for (const item of actions) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', item.title),
                   node('small', `${item.source_kind}${item.source_ref ? ` · ${item.source_ref}` : ''}`));
+      if (item.source_ref && ['note', 'document'].includes(item.source_kind)) {
+        const source = node('a', 'Open source');
+        source.href = item.source_kind === 'note'
+          ? `/#open=notes&note=${encodeURIComponent(item.source_ref)}`
+          : `/#document-${encodeURIComponent(item.source_ref)}`;
+        card.append(source);
+      }
       if (item.source_excerpt) card.append(node('p', item.source_excerpt));
       const actionsRow = node('div', undefined, 'card-actions');
       const select = node('select');
@@ -150,6 +164,13 @@
       formElement.reset(); await loadActions();
     });
   });
+  $('extract-note-actions').addEventListener('click', () => run(async () => {
+    const noteId = $('action-source-note').value;
+    if (!noteId) throw new Error('Choose a source note first.');
+    const result = await api(`/api/actions/from-note/${encodeURIComponent(noteId)}`, { method: 'POST' });
+    await loadActions();
+    return `${result.created.length} new proposal(s) from the note; ${result.skipped} already reviewed or pending.`;
+  }));
 
   async function loadCases() {
     state.cases = await api('/api/evals/cases');

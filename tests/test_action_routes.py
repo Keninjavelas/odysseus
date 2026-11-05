@@ -52,3 +52,35 @@ def test_action_review_keeps_source_and_checklist_owner_scoped(action_db):
     with pytest.raises(HTTPException) as denied:
         action_routes.reject_action(bob, proposal["id"])
     assert denied.value.status_code == 404
+
+
+def test_note_task_extraction_is_reviewable_deduplicated_and_project_scoped(action_db):
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    with action_db() as db:
+        db.add(Note(id="meeting", owner="alice", project_id="film", title="Review notes",
+                    note_type="note", archived=False,
+                    content="Context only\nTODO: Send review link\n- [ ] Book color session\nAction: Send review link",
+                    items='[{"text":"Check subtitles","done":false},{"text":"Done item","done":true}]'))
+        db.add(Note(id="film-list", owner="alice", project_id="film", title="Film tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.add(Note(id="other-list", owner="alice", title="General tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.commit()
+    proposed = action_routes.propose_actions_from_note(alice, "meeting")
+    assert [item["title"] for item in proposed["created"]] == [
+        "Send review link", "Book color session", "Check subtitles"]
+    assert proposed["source_url"] == "/#open=notes&note=meeting"
+    assert proposed["created"][0]["source_excerpt"].startswith("Line 2:")
+    repeated = action_routes.propose_actions_from_note(alice, "meeting")
+    assert repeated["created"] == [] and repeated["skipped"] == 3
+    with pytest.raises(HTTPException) as denied:
+        action_routes.propose_actions_from_note(bob, "meeting")
+    assert denied.value.status_code == 404
+    proposal_id = proposed["created"][0]["id"]
+    with pytest.raises(HTTPException) as wrong_project:
+        action_routes.accept_action(alice, proposal_id, action_routes.AcceptInput(note_id="other-list"))
+    assert wrong_project.value.status_code == 409
+    accepted = action_routes.accept_action(alice, proposal_id,
+                                           action_routes.AcceptInput(note_id="film-list"))
+    assert accepted["status"] == "accepted"

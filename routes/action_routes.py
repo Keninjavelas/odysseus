@@ -1,6 +1,7 @@
 """Review source-linked action proposals before adding checklist items."""
 
 import json
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -24,6 +25,40 @@ class CandidateInput(BaseModel):
 
 class AcceptInput(BaseModel):
     note_id: str
+
+
+def _extract_note_actions(note: Note) -> list[tuple[str, str]]:
+    """Extract explicitly marked tasks without guessing intent from prose."""
+    found = []
+    seen = set()
+    marker = re.compile(r"^\s*(?:[-*]\s*\[\s\]\s*|(?:TODO|ACTION|NEXT STEP|FOLLOW UP)\s*:\s*)",
+                        re.IGNORECASE)
+    for number, line in enumerate((note.content or "").splitlines(), start=1):
+        match = marker.match(line)
+        if not match:
+            continue
+        title = line[match.end():].strip(" -*\t")
+        if not title or len(title) > 300 or title.casefold() in seen:
+            continue
+        seen.add(title.casefold())
+        found.append((title, f"Line {number}: {line.strip()}"))
+        if len(found) >= 20:
+            return found
+    try:
+        items = json.loads(note.items or "[]")
+    except (TypeError, json.JSONDecodeError):
+        items = []
+    for number, item in enumerate(items, start=1):
+        if not isinstance(item, dict) or item.get("done"):
+            continue
+        title = str(item.get("text") or "").strip()
+        if not title or len(title) > 300 or title.casefold() in seen:
+            continue
+        seen.add(title.casefold())
+        found.append((title, f"Checklist item {number}: {title}"))
+        if len(found) >= 20:
+            break
+    return found
 
 
 def _payload(candidate):
@@ -91,6 +126,36 @@ def create_action(request: Request, payload: CandidateInput):
         db.close()
 
 
+@router.post("/from-note/{note_id}", status_code=201)
+def propose_actions_from_note(request: Request, note_id: str):
+    owner = effective_user(request)
+    db = SessionLocal()
+    try:
+        note = db.query(Note).filter(Note.id == note_id, Note.owner == owner).first()
+        if note is None or note.archived:
+            raise HTTPException(404, "Open source note not found")
+        candidates = _extract_note_actions(note)
+        existing = {row.title.casefold() for row in db.query(ActionCandidate).filter(
+            ActionCandidate.owner == owner, ActionCandidate.source_kind == "note",
+            ActionCandidate.source_ref == note_id).all()}
+        created = []
+        for title, excerpt in candidates:
+            if title.casefold() in existing:
+                continue
+            candidate = ActionCandidate(id=str(uuid.uuid4()), owner=owner, title=title,
+                                        source_kind="note", source_ref=note_id,
+                                        source_excerpt=excerpt, status="pending")
+            db.add(candidate)
+            created.append(candidate)
+            existing.add(title.casefold())
+        db.commit()
+        return {"created": [_payload(candidate) for candidate in created],
+                "skipped": len(candidates) - len(created),
+                "source_url": f"/#open=notes&note={note_id}"}
+    finally:
+        db.close()
+
+
 @router.post("/{candidate_id}/accept")
 def accept_action(request: Request, candidate_id: str, payload: AcceptInput):
     owner = effective_user(request)
@@ -102,6 +167,18 @@ def accept_action(request: Request, candidate_id: str, payload: AcceptInput):
         note = db.query(Note).filter(Note.id == payload.note_id, Note.owner == owner).first()
         if note is None or note.note_type not in {"checklist", "todo", "goal"} or note.archived:
             raise HTTPException(404, "Open checklist not found")
+        if candidate.source_kind in {"note", "document"}:
+            if candidate.source_kind == "note":
+                source = db.query(Note).filter(Note.id == candidate.source_ref,
+                                               Note.owner == owner).first()
+            else:
+                from core.database import Document
+                source = db.query(Document).filter(Document.id == candidate.source_ref,
+                                                   Document.owner == owner).first()
+            if source is None:
+                raise HTTPException(409, "Source record is no longer available")
+            if source.project_id != note.project_id:
+                raise HTTPException(409, "Source and checklist belong to different projects")
         try:
             items = json.loads(note.items or "[]")
         except (TypeError, json.JSONDecodeError):

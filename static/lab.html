@@ -48,6 +48,12 @@
         <label>Source excerpt <textarea name="source_excerpt" rows="2"></textarea></label>
         <button>Add proposal</button>
       </form>
+      <div class="subpanel">
+        <h3>Propose tasks from a note</h3>
+        <p>Find unchecked checklist items and lines marked TODO, Action, Next step, or Follow up. Review each proposal below before accepting it.</p>
+        <label>Source note <select id="action-source-note"></select></label>
+        <button id="extract-note-actions" type="button">Find tasks</button>
+      </div>
       <div id="action-list" class="cards"></div>
     </section>
 
