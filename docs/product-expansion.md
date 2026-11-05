@@ -20,7 +20,8 @@ product experience described later in the roadmap is complete.
   proposals and duplicate checklist items are detected. The lab can extract
   explicitly marked TODO, Action, Next step, Follow up, and unchecked checklist
   lines from a note into proposals. Note and document proposals link directly
-  to their source; accepting one into a checklist requires the same project.
+  to their source; marked document lines can be extracted the same way.
+  Accepting a note or document proposal into a checklist requires the same project.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
   also be assigned to a project; the Notes agent tool reads and writes within
@@ -76,8 +77,8 @@ product experience described later in the roadmap is complete.
    The current live runner uses plan mode, so effectful tool workflows still
    need isolated disposable fixtures before they can be evaluated safely.
 4. **Automatic action extraction.** Connect email, research, and meeting
-   pipelines to the review queue with verifiable source deep links. The note
-   extraction path handles explicit task markers; unmarked prose and external
+   pipelines to the review queue with verifiable source deep links. Note and
+   document extraction handle explicit task markers; unmarked prose and external
    sources still need parsers and source verification.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, generated stills, batch voiceover,

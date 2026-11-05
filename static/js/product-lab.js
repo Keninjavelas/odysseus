@@ -109,7 +109,9 @@
   });
 
   async function loadActions() {
-    const [actions, notesResult] = await Promise.all([api('/api/actions'), api('/api/notes')]);
+    const [actions, notesResult, documentsResult] = await Promise.all([
+      api('/api/actions'), api('/api/notes'), api('/api/documents/library?limit=50'),
+    ]);
     const openNotes = (notesResult.notes || []).filter((note) => !note.archived);
     state.notes = openNotes.filter((note) => note.note_type === 'checklist');
     const sourceSelect = $('action-source-note'); sourceSelect.replaceChildren();
@@ -117,6 +119,12 @@
     for (const note of openNotes) {
       const option = node('option', note.title || 'Untitled note');
       option.value = note.id; sourceSelect.append(option);
+    }
+    const documentSelect = $('action-source-document'); documentSelect.replaceChildren();
+    documentSelect.append(node('option', 'Choose a recent document')); documentSelect.firstChild.value = '';
+    for (const doc of documentsResult.documents || []) {
+      const option = node('option', doc.title || 'Untitled document');
+      option.value = doc.id; documentSelect.append(option);
     }
     const list = $('action-list'); list.replaceChildren();
     if (!actions.length) list.append(node('p', 'No pending proposals.'));
@@ -170,6 +178,13 @@
     const result = await api(`/api/actions/from-note/${encodeURIComponent(noteId)}`, { method: 'POST' });
     await loadActions();
     return `${result.created.length} new proposal(s) from the note; ${result.skipped} already reviewed or pending.`;
+  }));
+  $('extract-document-actions').addEventListener('click', () => run(async () => {
+    const documentId = $('action-source-document').value;
+    if (!documentId) throw new Error('Choose a source document first.');
+    const result = await api(`/api/actions/from-document/${encodeURIComponent(documentId)}`, { method: 'POST' });
+    await loadActions();
+    return `${result.created.length} new proposal(s) from the document; ${result.skipped} already reviewed or pending.`;
   }));
 
   async function loadCases() {

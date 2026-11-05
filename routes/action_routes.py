@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from core.database import ActionCandidate, Note, SessionLocal
+from core.database import ActionCandidate, Document, Note, SessionLocal
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 
 
@@ -27,13 +27,13 @@ class AcceptInput(BaseModel):
     note_id: str
 
 
-def _extract_note_actions(note: Note) -> list[tuple[str, str]]:
+def _extract_marked_actions(content: str) -> list[tuple[str, str]]:
     """Extract explicitly marked tasks without guessing intent from prose."""
     found = []
     seen = set()
     marker = re.compile(r"^\s*(?:[-*]\s*\[\s\]\s*|(?:TODO|ACTION|NEXT STEP|FOLLOW UP)\s*:\s*)",
                         re.IGNORECASE)
-    for number, line in enumerate((note.content or "").splitlines(), start=1):
+    for number, line in enumerate((content or "").splitlines(), start=1):
         match = marker.match(line)
         if not match:
             continue
@@ -44,6 +44,12 @@ def _extract_note_actions(note: Note) -> list[tuple[str, str]]:
         found.append((title, f"Line {number}: {line.strip()}"))
         if len(found) >= 20:
             return found
+    return found
+
+
+def _extract_note_actions(note: Note) -> list[tuple[str, str]]:
+    found = _extract_marked_actions(note.content or "")
+    seen = {title.casefold() for title, _ in found}
     try:
         items = json.loads(note.items or "[]")
     except (TypeError, json.JSONDecodeError):
@@ -59,6 +65,26 @@ def _extract_note_actions(note: Note) -> list[tuple[str, str]]:
         if len(found) >= 20:
             break
     return found
+
+
+def _propose_from_source(db, owner: str, source_kind: str, source_ref: str,
+                         extracted: list[tuple[str, str]]) -> dict:
+    existing = {row.title.casefold() for row in db.query(ActionCandidate).filter(
+        ActionCandidate.owner == owner, ActionCandidate.source_kind == source_kind,
+        ActionCandidate.source_ref == source_ref).all()}
+    created = []
+    for title, excerpt in extracted:
+        if title.casefold() in existing:
+            continue
+        candidate = ActionCandidate(id=str(uuid.uuid4()), owner=owner, title=title,
+                                    source_kind=source_kind, source_ref=source_ref,
+                                    source_excerpt=excerpt, status="pending")
+        db.add(candidate)
+        created.append(candidate)
+        existing.add(title.casefold())
+    db.commit()
+    return {"created": [_payload(candidate) for candidate in created],
+            "skipped": len(extracted) - len(created)}
 
 
 def _payload(candidate):
@@ -135,23 +161,25 @@ def propose_actions_from_note(request: Request, note_id: str):
         if note is None or note.archived:
             raise HTTPException(404, "Open source note not found")
         candidates = _extract_note_actions(note)
-        existing = {row.title.casefold() for row in db.query(ActionCandidate).filter(
-            ActionCandidate.owner == owner, ActionCandidate.source_kind == "note",
-            ActionCandidate.source_ref == note_id).all()}
-        created = []
-        for title, excerpt in candidates:
-            if title.casefold() in existing:
-                continue
-            candidate = ActionCandidate(id=str(uuid.uuid4()), owner=owner, title=title,
-                                        source_kind="note", source_ref=note_id,
-                                        source_excerpt=excerpt, status="pending")
-            db.add(candidate)
-            created.append(candidate)
-            existing.add(title.casefold())
-        db.commit()
-        return {"created": [_payload(candidate) for candidate in created],
-                "skipped": len(candidates) - len(created),
+        return {**_propose_from_source(db, owner, "note", note_id, candidates),
                 "source_url": f"/#open=notes&note={note_id}"}
+    finally:
+        db.close()
+
+
+@router.post("/from-document/{document_id}", status_code=201)
+def propose_actions_from_document(request: Request, document_id: str):
+    owner = effective_user(request)
+    db = SessionLocal()
+    try:
+        document = db.query(Document).filter(Document.id == document_id,
+                                             Document.owner == owner,
+                                             Document.is_active == True).first()
+        if document is None:
+            raise HTTPException(404, "Source document not found")
+        candidates = _extract_marked_actions(document.current_content or "")
+        return {**_propose_from_source(db, owner, "document", document_id, candidates),
+                "source_url": f"/#document-{document_id}"}
     finally:
         db.close()
 

@@ -6,14 +6,15 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from core.database import ActionCandidate, Base, Note
+from core.database import ActionCandidate, Base, Document, Note, Session
 from routes import action_routes
 
 
 @pytest.fixture
 def action_db(monkeypatch):
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[ActionCandidate.__table__, Note.__table__])
+    Base.metadata.create_all(engine, tables=[Session.__table__, ActionCandidate.__table__, Note.__table__,
+                                             Document.__table__])
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(action_routes, "SessionLocal", factory)
     monkeypatch.setattr(action_routes, "effective_user", lambda request: request.owner)
@@ -82,5 +83,29 @@ def test_note_task_extraction_is_reviewable_deduplicated_and_project_scoped(acti
         action_routes.accept_action(alice, proposal_id, action_routes.AcceptInput(note_id="other-list"))
     assert wrong_project.value.status_code == 409
     accepted = action_routes.accept_action(alice, proposal_id,
+                                           action_routes.AcceptInput(note_id="film-list"))
+    assert accepted["status"] == "accepted"
+
+
+def test_document_task_extraction_links_source_and_keeps_project(action_db):
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    with action_db() as db:
+        db.add(Document(id="brief", owner="alice", project_id="film", is_active=True,
+                        title="Production brief", current_content=(
+                            "Overview\nNext step: Review rough cut\n- [ ] Approve music license\n"
+                            "Follow up: Review rough cut")))
+        db.add(Note(id="film-list", owner="alice", project_id="film", title="Film tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.commit()
+    result = action_routes.propose_actions_from_document(alice, "brief")
+    assert [item["title"] for item in result["created"]] == [
+        "Review rough cut", "Approve music license"]
+    assert result["source_url"] == "/#document-brief"
+    assert action_routes.propose_actions_from_document(alice, "brief")["skipped"] == 2
+    with pytest.raises(HTTPException) as denied:
+        action_routes.propose_actions_from_document(bob, "brief")
+    assert denied.value.status_code == 404
+    accepted = action_routes.accept_action(alice, result["created"][0]["id"],
                                            action_routes.AcceptInput(note_id="film-list"))
     assert accepted["status"] == "accepted"
