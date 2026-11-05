@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from core.database import Document, Note, Project, Session, SessionLocal
 from src.auth_helpers import effective_user, require_chat_api_token_scope
+from src.constants import DATA_DIR
+from src.memory import MemoryManager
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"],
@@ -94,6 +96,8 @@ def delete_project(request: Request, project_id: str):
     owner = effective_user(request)
     db = SessionLocal()
     research_changes = []
+    memory_manager = MemoryManager(DATA_DIR)
+    memory_changes = []
     try:
         project = _owned_project(db, project_id, owner)
         # Deleting a container keeps its conversations; they become unassigned.
@@ -103,6 +107,8 @@ def delete_project(request: Request, project_id: str):
             {Note.project_id: None}, synchronize_session=False)
         db.query(Document).filter(Document.owner == owner, Document.project_id == project_id).update(
             {Document.project_id: None}, synchronize_session=False)
+        memory_changes = memory_manager.reassign_project(
+            owner, None, from_project_id=project_id)
         from routes.research.research_routes import _clear_owned_research_project
         research_changes = _clear_owned_research_project(owner, project_id)
         db.delete(project)
@@ -113,6 +119,7 @@ def delete_project(request: Request, project_id: str):
         if research_changes:
             from routes.research.research_routes import _restore_research_projects
             _restore_research_projects(research_changes)
+        memory_manager.restore_project_assignments(memory_changes)
         raise
     finally:
         db.close()
@@ -122,6 +129,8 @@ def delete_project(request: Request, project_id: str):
 def assign_session(request: Request, project_id: str, session_id: str):
     owner = effective_user(request)
     db = SessionLocal()
+    memory_manager = MemoryManager(DATA_DIR)
+    memory_changes = []
     try:
         _owned_project(db, project_id, owner)
         session = db.query(Session).filter(Session.id == session_id, Session.owner == owner).first()
@@ -131,8 +140,14 @@ def assign_session(request: Request, project_id: str, session_id: str):
         db.query(Document).filter(Document.owner == owner,
                                   Document.session_id == session_id).update(
             {Document.project_id: project_id}, synchronize_session=False)
+        memory_changes = memory_manager.reassign_project(
+            owner, project_id, session_id=session_id)
         db.commit()
         return {"session_id": session_id, "project_id": project_id}
+    except Exception:
+        db.rollback()
+        memory_manager.restore_project_assignments(memory_changes)
+        raise
     finally:
         db.close()
 
@@ -141,6 +156,8 @@ def assign_session(request: Request, project_id: str, session_id: str):
 def unassign_session(request: Request, project_id: str, session_id: str):
     owner = effective_user(request)
     db = SessionLocal()
+    memory_manager = MemoryManager(DATA_DIR)
+    memory_changes = []
     try:
         _owned_project(db, project_id, owner)
         session = db.query(Session).filter(Session.id == session_id,
@@ -152,8 +169,14 @@ def unassign_session(request: Request, project_id: str, session_id: str):
         db.query(Document).filter(Document.owner == owner,
                                   Document.session_id == session_id).update(
             {Document.project_id: None}, synchronize_session=False)
+        memory_changes = memory_manager.reassign_project(
+            owner, None, session_id=session_id)
         db.commit()
         return {"session_id": session_id, "project_id": None}
+    except Exception:
+        db.rollback()
+        memory_manager.restore_project_assignments(memory_changes)
+        raise
     finally:
         db.close()
 

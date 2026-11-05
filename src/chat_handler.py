@@ -349,9 +349,16 @@ class ChatHandler:
             message
         )
         if is_memory_cmd and memory_text:
-            mem = self.memory_manager.load()
-            if not self.memory_manager.find_duplicates(memory_text, mem):
-                new_entry = self.memory_manager.add_entry(memory_text)
+            from src.memory import project_visible_memories
+            from src.project_context import session_project_id
+            owner = getattr(session, "owner", None)
+            project_id = session_project_id(getattr(session, "id", None), owner)
+            mem = self.memory_manager.load_all_for_update()
+            visible = project_visible_memories(
+                [entry for entry in mem if entry.get("owner") == owner], project_id)
+            if not self.memory_manager.find_duplicates(memory_text, visible):
+                new_entry = self.memory_manager.add_entry(
+                    memory_text, owner=owner, project_id=project_id)
                 mem.append(new_entry)
                 self.memory_manager.save(mem)
 

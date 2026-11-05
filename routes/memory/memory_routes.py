@@ -118,18 +118,23 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
         text = (memory_data.text or "").strip()
         if not text:
             raise HTTPException(400, "empty memory")
-        user_mem = memory_manager.load(owner=user)
-        if memory_manager.find_duplicates(text, user_mem):
-            return {"ok": True, "count": len(user_mem), "message": "Memory already exists"}
-
+        project_id = None
         if memory_data.session_id:
             try:
                 session_obj = session_manager.get_session(memory_data.session_id)
             except KeyError:
                 raise HTTPException(404, "Session not found")
             _assert_session_owner(session_obj, user)
+            from src.project_context import session_project_id
+            project_id = session_project_id(memory_data.session_id, user)
 
-        new_entry = memory_manager.add_entry(text, memory_data.source, memory_data.category, owner=user)
+        from src.memory import project_visible_memories
+        user_mem = memory_manager.load(owner=user)
+        if memory_manager.find_duplicates(text, project_visible_memories(user_mem, project_id)):
+            return {"ok": True, "count": len(user_mem), "message": "Memory already exists"}
+
+        new_entry = memory_manager.add_entry(text, memory_data.source, memory_data.category,
+                                             owner=user, project_id=project_id)
         if memory_data.session_id:
             new_entry["session_id"] = memory_data.session_id
         all_mem = _load_for_update(memory_manager)

@@ -75,6 +75,12 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
 
     # Initialize core managers
     memory_manager = MemoryManager(DATA_DIR)
+    try:
+        tagged = memory_manager.backfill_session_projects()
+        if tagged:
+            logger.info("Assigned %d legacy memories to chat projects", tagged)
+    except Exception as error:
+        logger.warning("Memory project backfill skipped: %s", error)
     skills_manager = SkillsManager(DATA_DIR)
     session_manager = SessionManager(SESSIONS_FILE)
     set_session_manager(session_manager)  # Enable Session.add_message() persistence

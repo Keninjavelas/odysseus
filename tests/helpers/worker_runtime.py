@@ -72,8 +72,14 @@ def isolated_runtime(worker="main"):
             try:
                 yield root
             finally:
-                for handler in list(logging.getLogger().handlers):
-                    filename = getattr(handler, "baseFilename", None)
-                    if filename and Path(filename).is_relative_to(root):
-                        logging.getLogger().removeHandler(handler)
-                        handler.close()
+                # App loggers can own FileHandlers directly. On Windows an
+                # open child logger handle prevents TemporaryDirectory cleanup.
+                loggers = [logging.getLogger(), *(
+                    item for item in logging.Logger.manager.loggerDict.values()
+                    if isinstance(item, logging.Logger))]
+                for logger in loggers:
+                    for handler in list(logger.handlers):
+                        filename = getattr(handler, "baseFilename", None)
+                        if filename and Path(filename).is_relative_to(root):
+                            logger.removeHandler(handler)
+                            handler.close()

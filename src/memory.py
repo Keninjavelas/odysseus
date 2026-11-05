@@ -11,6 +11,12 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def project_visible_memories(entries: List[Dict], project_id: str | None) -> List[Dict]:
+    """Global memories plus those assigned to the active project."""
+    return [entry for entry in entries
+            if not entry.get("project_id") or entry.get("project_id") == project_id]
+
+
 class MemoryStoreUnreadable(RuntimeError):
     """memory.json exists on disk but could not be read or parsed.
 
@@ -193,6 +199,75 @@ class MemoryManager:
             return entries
         return [e for e in entries if e.get("owner") == owner]
 
+    def reassign_project(self, owner: str, project_id: str | None,
+                         *, session_id: str | None = None,
+                         from_project_id: str | None = None) -> list[tuple[str, str | None]]:
+        """Move matching memories with their chat, or clear a deleted project."""
+        if not session_id and not from_project_id:
+            raise ValueError("A session or source project is required")
+        entries = self.load_all_for_update()
+        changed = []
+        for entry in entries:
+            if entry.get("owner") != owner:
+                continue
+            if session_id is not None:
+                if entry.get("session_id") != session_id:
+                    continue
+            elif entry.get("project_id") != from_project_id:
+                continue
+            prior = entry.get("project_id")
+            if prior == project_id:
+                continue
+            changed.append((entry["id"], prior))
+            if project_id:
+                entry["project_id"] = project_id
+            else:
+                entry.pop("project_id", None)
+        if changed:
+            self.save(entries)
+        return changed
+
+    def restore_project_assignments(self, changes: list[tuple[str, str | None]]) -> None:
+        """Restore only rows changed by a failed project database update."""
+        if not changes:
+            return
+        prior_by_id = dict(changes)
+        entries = self.load_all_for_update()
+        for entry in entries:
+            if entry.get("id") not in prior_by_id:
+                continue
+            previous = prior_by_id[entry["id"]]
+            if previous:
+                entry["project_id"] = previous
+            else:
+                entry.pop("project_id", None)
+        self.save(entries)
+
+    def backfill_session_projects(self) -> int:
+        """Tag legacy session memories using the current owner-matched chat."""
+        entries = self.load_all_for_update()
+        session_ids = {entry.get("session_id") for entry in entries
+                       if entry.get("session_id") and entry.get("owner")
+                       and not entry.get("project_id")}
+        if not session_ids:
+            return 0
+        from core.database import Session, SessionLocal
+        with SessionLocal() as db:
+            sessions = {row.id: row for row in db.query(Session).filter(
+                Session.id.in_(session_ids)).all()}
+        changed = 0
+        for entry in entries:
+            session = sessions.get(entry.get("session_id"))
+            if (session is None or not session.project_id
+                    or session.owner != entry.get("owner")
+                    or entry.get("project_id")):
+                continue
+            entry["project_id"] = session.project_id
+            changed += 1
+        if changed:
+            self.save(entries)
+        return changed
+
     def claim_ownerless(self, owner: str):
         """Assign all ownerless memory entries to the given owner."""
         try:
@@ -277,7 +352,8 @@ class MemoryManager:
             json.dump(entries, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, self.memory_file)
     
-    def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None) -> Dict:
+    def add_entry(self, text: str, source: str = "user", category: str = "fact",
+                  owner: str = None, project_id: str = None) -> Dict:
         """Add a new memory entry."""
         if not text.strip():
             raise ValueError("Memory text cannot be empty")
@@ -292,6 +368,8 @@ class MemoryManager:
         }
         if owner:
             entry["owner"] = owner
+        if project_id:
+            entry["project_id"] = project_id
         return entry
 
     def increment_uses(self, ids: List[str]) -> None:

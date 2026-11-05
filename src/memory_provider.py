@@ -68,6 +68,7 @@ class MemoryProvider(ABC):
         *,
         owner: Optional[str] = None,
         top_k: int = 5,
+        session_id: Optional[str] = None,
     ) -> List[MemorySearchHit]:
         """Return provider memories relevant to the query."""
 
@@ -77,11 +78,13 @@ class MemoryProvider(ABC):
         *,
         owner: Optional[str] = None,
         limit: int = 100,
+        session_id: Optional[str] = None,
     ) -> List[MemoryRecord]:
         """List memories visible to the owner."""
 
     @abstractmethod
-    async def delete(self, memory_id: str, *, owner: Optional[str] = None) -> bool:
+    async def delete(self, memory_id: str, *, owner: Optional[str] = None,
+                     session_id: Optional[str] = None) -> bool:
         """Delete a memory by ID when allowed by the provider."""
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
@@ -146,11 +149,13 @@ class NativeMemoryProvider(MemoryProvider):
         source: str = "user",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> MemoryRecord:
+        from src.project_context import session_project_id
         entry = self.memory_manager.add_entry(
             text,
             source=source,
             category=category,
             owner=owner,
+            project_id=session_project_id(session_id, owner),
         )
         if session_id:
             entry["session_id"] = session_id
@@ -176,8 +181,14 @@ class NativeMemoryProvider(MemoryProvider):
         *,
         owner: Optional[str] = None,
         top_k: int = 5,
+        session_id: Optional[str] = None,
     ) -> List[MemorySearchHit]:
         memories = self.memory_manager.load(owner=owner)
+        if session_id:
+            from src.memory import project_visible_memories
+            from src.project_context import session_project_id
+            memories = project_visible_memories(
+                memories, session_project_id(session_id, owner))
         by_id = {m.get("id"): m for m in memories}
 
         if self._vector_available():
@@ -186,7 +197,11 @@ class NativeMemoryProvider(MemoryProvider):
                 if not isinstance(result, dict):
                     continue
                 memory_id = result.get("memory_id")
-                entry = by_id.get(memory_id) if memory_id else result
+                # Legacy vector rows can carry their full record in single-user
+                # mode. Scoped calls must resolve an id from the filtered JSON.
+                entry = (by_id.get(memory_id) if memory_id else None)
+                if entry is None and owner is None and session_id is None and not memory_id:
+                    entry = result
                 if not entry:
                     continue
                 if owner is not None and entry.get("owner") != owner:
@@ -220,13 +235,21 @@ class NativeMemoryProvider(MemoryProvider):
         *,
         owner: Optional[str] = None,
         limit: int = 100,
+        session_id: Optional[str] = None,
     ) -> List[MemoryRecord]:
+        memories = self.memory_manager.load(owner=owner)
+        if session_id:
+            from src.memory import project_visible_memories
+            from src.project_context import session_project_id
+            memories = project_visible_memories(
+                memories, session_project_id(session_id, owner))
         return [
             self._to_record(entry)
-            for entry in self.memory_manager.load(owner=owner)[:limit]
+            for entry in memories[:limit]
         ]
 
-    async def delete(self, memory_id: str, *, owner: Optional[str] = None) -> bool:
+    async def delete(self, memory_id: str, *, owner: Optional[str] = None,
+                     session_id: Optional[str] = None) -> bool:
         # Strict load for the same reason: `remaining` is derived from this
         # list and saved back, so it must never be built from a store we
         # failed to read.
@@ -241,6 +264,12 @@ class NativeMemoryProvider(MemoryProvider):
             if owner is not None and entry.get("owner") != owner:
                 remaining.append(entry)
                 continue
+            if session_id:
+                from src.project_context import session_project_id
+                project_id = session_project_id(session_id, owner)
+                if entry.get("project_id") and entry.get("project_id") != project_id:
+                    remaining.append(entry)
+                    continue
             deleted_id = entry.get("id")
 
         if deleted_id is None:

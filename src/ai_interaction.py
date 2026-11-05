@@ -401,6 +401,10 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
     if not _memory_manager:
         return {"error": "Memory manager not available"}
 
+    from src.memory import project_visible_memories
+    from src.project_context import session_project_id
+    project_id = session_project_id(session_id, owner)
+
     from src.agent_runtime.owned_resources import active_owned_operation
     bound = active_owned_operation()
     if bound is not None:
@@ -414,7 +418,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
 
     if action == "list":
         category_filter = lines[1].strip().lower() if len(lines) > 1 and lines[1].strip() else None
-        memories = _memory_manager.load(owner=owner)
+        memories = project_visible_memories(_memory_manager.load(owner=owner), project_id)
         if category_filter:
             memories = [m for m in memories if m.get("category", "").lower() == category_filter]
         if not memories:
@@ -438,7 +442,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if not text:
             return {"error": "Memory text cannot be empty"}
 
-        entry = _memory_manager.add_entry(text, source="ai_agent", category=category, owner=owner)
+        entry = _memory_manager.add_entry(text, source="ai_agent", category=category,
+                                          owner=owner, project_id=project_id)
         # Strict load: this is a read-modify-write, and it is the path an
         # ordinary "remember that I prefer X" takes. Degrading to [] here would
         # save just this one entry over a store we only failed to read,
@@ -476,12 +481,17 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if not new_text:
             return {"error": "New text cannot be empty"}
 
-        memories = _memory_manager.load_all()
+        try:
+            memories = _memory_manager.load_all_for_update()
+        except MemoryStoreUnreadable:
+            return {"error": "Memory store is temporarily unreadable — nothing was saved."}
         found = False
         for m in memories:
             if (m.get("id", "") == memory_id if bound is not None else m.get("id", "").startswith(memory_id)):
                 # Verify ownership
                 if owner and m.get("owner") != owner:
+                    return {"error": f"Memory '{memory_id}' not found"}
+                if m.get("project_id") and m.get("project_id") != project_id:
                     return {"error": f"Memory '{memory_id}' not found"}
                 m["text"] = new_text
                 m["timestamp"] = int(time.time())
@@ -509,7 +519,10 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if not memory_id:
             return {"error": "Delete needs line 2: memory_id"}
 
-        memories = _memory_manager.load_all()
+        try:
+            memories = _memory_manager.load_all_for_update()
+        except MemoryStoreUnreadable:
+            return {"error": "Memory store is temporarily unreadable — nothing was saved."}
         original_len = len(memories)
         full_id = None
         delete_id = None
@@ -517,6 +530,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
             if (m.get("id", "") == memory_id if bound is not None else m.get("id", "").startswith(memory_id)):
                 # Verify ownership
                 if owner and m.get("owner") != owner:
+                    return {"error": f"Memory '{memory_id}' not found"}
+                if m.get("project_id") and m.get("project_id") != project_id:
                     return {"error": f"Memory '{memory_id}' not found"}
                 full_id = m["id"]
                 delete_id = m["id"]
@@ -540,7 +555,7 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if len(lines) < 2:
             return {"error": "Search needs line 2: query"}
         query = lines[1].strip()
-        memories = _memory_manager.load(owner=owner)
+        memories = project_visible_memories(_memory_manager.load(owner=owner), project_id)
         query_lower = query.lower()
         exact_results = [m for m in memories if query_lower in (m.get("text", "").lower())]
 

@@ -40,6 +40,13 @@ product experience described later in the roadmap is complete.
   and language facets. Document agent actions, their approval binding, and chat
   document injection check the current chat's project. Project deletion unassigns
   documents without deleting them.
+- Chat memory recall and the `manage_memory` agent tool see global memories plus
+  the current project's memories. New chat memories carry a project ID;
+  existing owner-matched session memories are tagged on startup. Moving a chat
+  or deleting its project updates associated memory assignments. The native
+  memory provider accepts session context for scoped recall and deletion, and
+  scheduled consolidation keeps owners and projects separate. The owner-wide
+  Memory settings view can still manage all of that owner's records.
 - `/api/evals/cases` saves evaluation prompts and tool/response expectations.
   Submit canonical traces to `/api/evals/cases/<id>/grade`, then compare two
   stored runs via `/api/evals/compare/<left>/<right>`. Project Lab can also
@@ -73,11 +80,12 @@ product experience described later in the roadmap is complete.
 
 ## Next implementation gates
 
-1. **Complete project context isolation.** Add project IDs to memory and media
-   records, and require project filters in all agent retrieval.
+1. **Complete project context isolation.** Add project IDs to media and upload
+   records, and require project filters in all remaining agent retrieval.
    Chats, Notes, and Documents now have project assignments and their main agent
    paths filter by project. Chat-originated research now carries a project, but
-   unfiltered manual research browsing, other document retrieval, memory, uploads,
+   memory recall and writes now distinguish global from project records.
+   Unfiltered manual research browsing, other document retrieval, uploads,
    and media still need a full isolation audit and filters.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget

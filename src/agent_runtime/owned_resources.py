@@ -172,9 +172,13 @@ def _vault_selector(owner, selector):
 
 def _memory_record(identifier, owner, thread, *, prefix=False):
     from src.ai_interaction import _memory_manager
+    from src.memory import project_visible_memories
+    from src.project_context import session_project_id
     if _memory_manager is None:
         raise ResourceIdentityError("Memory store is unavailable")
-    rows = [row for row in _memory_manager.load(owner=owner) if isinstance(row, dict)
+    visible = project_visible_memories(
+        _memory_manager.load(owner=owner), session_project_id(thread, owner))
+    rows = [row for row in visible if isinstance(row, dict)
             and row.get("owner") == owner and isinstance(row.get("id"), str)
             and (row["id"].startswith(identifier) if prefix else row["id"] == identifier)]
     if len(rows) != 1 or not identifier or rows[0].get("timestamp") is None or rows[0]["id"] in {"", "*"}:

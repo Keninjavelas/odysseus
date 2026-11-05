@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from core.database import Base, Document, Note, Project, Session
 from routes import project_routes
 from routes.research import research_routes
+from src.memory import MemoryManager
 
 
 @pytest.fixture
@@ -24,6 +25,7 @@ def project_db(monkeypatch, tmp_path):
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(project_routes, "SessionLocal", factory)
     monkeypatch.setattr(project_routes, "effective_user", lambda request: request.owner)
+    monkeypatch.setattr(project_routes, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(research_routes, "_research_storage_root", lambda: tmp_path)
     yield factory
     engine.dispose()
@@ -65,6 +67,20 @@ def test_project_membership_is_owner_scoped(project_db, tmp_path):
     assert project_routes.list_projects(alice)[0]["document_count"] == 1
     assert project_routes.list_projects(bob) == []
 
+    memory = MemoryManager(str(tmp_path))
+    memory.save([
+        {"id": "alice-chat-memory", "owner": "alice", "session_id": "alice-chat",
+         "text": "Film planning"},
+        {"id": "bob-chat-memory", "owner": "bob", "session_id": "bob-chat",
+         "text": "Private planning"},
+    ])
+    # Reassigning an existing chat carries its associated memories.
+    project_routes.assign_session(alice, created["id"], "alice-chat")
+    assert memory.load(owner="alice")[0]["project_id"] == created["id"]
+    project_routes.unassign_session(alice, created["id"], "alice-chat")
+    assert memory.load(owner="alice")[0].get("project_id") is None
+    project_routes.assign_session(alice, created["id"], "alice-chat")
+
     for rid, owner in (("alice-report", "alice"), ("bob-report", "bob")):
         (tmp_path / f"{rid}.json").write_text(json.dumps({
             "owner": owner, "project_id": created["id"], "result": "Report",
@@ -73,6 +89,8 @@ def test_project_membership_is_owner_scoped(project_db, tmp_path):
     project_routes.delete_project(alice, created["id"])
     assert json.loads((tmp_path / "alice-report.json").read_text(encoding="utf-8"))["project_id"] is None
     assert json.loads((tmp_path / "bob-report.json").read_text(encoding="utf-8"))["project_id"] == created["id"]
+    assert memory.load(owner="alice")[0].get("project_id") is None
+    assert memory.load(owner="bob")[0].get("project_id") is None
     with project_db() as db:
         assert db.get(Session, "alice-chat").project_id is None
         assert db.get(Session, "bob-chat").project_id is None

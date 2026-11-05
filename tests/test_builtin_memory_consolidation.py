@@ -117,6 +117,30 @@ async def test_consolidate_memory_specific_owner_does_not_absorb_ownerless_rows(
 
 
 @pytest.mark.asyncio
+async def test_consolidation_keeps_identical_facts_in_different_projects(monkeypatch, tmp_path):
+    from src import constants
+    from src import endpoint_resolver
+    action_consolidate_memory = _import_consolidate_action()
+
+    data_dir = _write_memories(tmp_path, [
+        {"id": "film-a", "owner": "alice", "project_id": "film",
+         "text": "Review the final cut", "category": "project"},
+        {"id": "film-b", "owner": "alice", "project_id": "film",
+         "text": "Review the final cut", "category": "project"},
+        {"id": "music-a", "owner": "alice", "project_id": "music",
+         "text": "Review the final cut", "category": "project"},
+    ])
+    monkeypatch.setattr(constants, "DATA_DIR", str(data_dir))
+    monkeypatch.setattr(endpoint_resolver, "resolve_endpoint", lambda *args, **kwargs: ("", "", {}))
+
+    _, ok = await action_consolidate_memory("alice")
+    assert ok is True
+    saved = {entry["id"] for entry in _read_memories(data_dir)}
+    assert len(saved & {"film-a", "film-b"}) == 1
+    assert "music-a" in saved
+
+
+@pytest.mark.asyncio
 async def test_consolidate_memory_removes_near_duplicates_before_ai(monkeypatch, tmp_path):
     from src import constants
     from src import llm_core

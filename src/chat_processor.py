@@ -329,7 +329,11 @@ class ChatProcessor:
         # Memory: core pinned facts + relevant pinned/extended recall.
         self._last_used_memories = []  # track what was injected
         if use_memory and not self._is_memory_management_request(message):
-            mem_entries = self.memory_manager.load(owner=owner)
+            from src.memory import project_visible_memories
+            from src.project_context import session_project_id
+            project_id = session_project_id(getattr(session, "id", None), owner)
+            mem_entries = project_visible_memories(
+                self.memory_manager.load(owner=owner), project_id)
 
             pinned = [m for m in mem_entries if m.get("pinned")]
             extended = [m for m in mem_entries if not m.get("pinned")]
