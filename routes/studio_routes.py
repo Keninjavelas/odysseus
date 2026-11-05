@@ -27,6 +27,12 @@ class EpisodeInput(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     outline: str = Field(min_length=1, max_length=12000)
     render_preview: bool = True
+    project_id: str | None = None
+
+
+class EpisodeProjectInput(BaseModel):
+    project_id: str | None = None
+    expected_revision: int | None = None
 
 
 class TimelineEdit(BaseModel):
@@ -62,13 +68,67 @@ def _episode_dir(owner: str | None, episode_id: str) -> Path:
     return _owner_dir(owner) / episode_id
 
 
+def _validated_project(owner: str | None, project_id: str | None) -> str | None:
+    if not project_id:
+        return None
+    from core.database import Project, SessionLocal
+    with SessionLocal() as db:
+        project = db.query(Project).filter(
+            Project.id == project_id, Project.owner == owner).first()
+        if project is None:
+            raise HTTPException(404, "Project not found")
+    return project_id
+
+
+def _restore_studio_projects(changes: list[tuple[Path, dict]]) -> None:
+    for directory, timeline in changes:
+        save_timeline(timeline, directory)
+
+
+def _clear_owned_studio_project(owner: str | None, project_id: str) -> list[tuple[Path, dict]]:
+    owner_dir = _owner_dir(owner).resolve()
+    changes = []
+    if not owner_dir.is_dir():
+        return changes
+    for directory in owner_dir.iterdir():
+        if not directory.is_dir() or not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", directory.name):
+            continue
+        directory = directory.resolve()
+        try:
+            directory.relative_to(owner_dir)
+        except ValueError:
+            continue
+        path = directory / "timeline.json"
+        if not path.is_file():
+            continue
+        try:
+            timeline = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(timeline, dict):
+            continue
+        if timeline.get("project_id") != project_id:
+            continue
+        try:
+            save_timeline({**timeline, "project_id": None}, directory)
+        except Exception:
+            _restore_studio_projects(changes)
+            raise
+        changes.append((directory, timeline))
+    return changes
+
+
 @router.post("/episodes", status_code=201)
 def create_episode(request: Request, payload: EpisodeInput):
+    owner = effective_user(request)
+    project_id = _validated_project(owner, payload.project_id)
     try:
         timeline = compile_storyboard(payload.title, payload.outline)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    directory = _episode_dir(effective_user(request), timeline["episode_id"])
+    timeline["project_id"] = project_id
+    directory = _episode_dir(owner, timeline["episode_id"])
     save_timeline(timeline, directory)
     preview_url = None
     if payload.render_preview:
@@ -83,7 +143,10 @@ def create_episode(request: Request, payload: EpisodeInput):
 @router.post("/episodes/from-srt", status_code=201)
 def create_episode_from_srt(request: Request, title: str = Form(...),
                             transcript: UploadFile = File(...),
-                            render: bool = Form(False)):
+                            render: bool = Form(False),
+                            project_id: str | None = Form(None)):
+    owner = effective_user(request)
+    project_id = _validated_project(owner, project_id if isinstance(project_id, str) else None)
     raw = transcript.file.read(1_000_001)
     if len(raw) > 1_000_000:
         raise HTTPException(413, "SRT exceeds 1 MB")
@@ -93,7 +156,8 @@ def create_episode_from_srt(request: Request, title: str = Form(...),
         raise HTTPException(422, "SRT must be UTF-8") from error
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    directory = _episode_dir(effective_user(request), timeline["episode_id"])
+    timeline["project_id"] = project_id
+    directory = _episode_dir(owner, timeline["episode_id"])
     save_timeline(timeline, directory)
     preview_url = None
     if render:
@@ -106,7 +170,7 @@ def create_episode_from_srt(request: Request, title: str = Form(...),
 
 
 @router.get("/episodes")
-def list_episodes(request: Request):
+def list_episodes(request: Request, project_id: str | None = None):
     owner_dir = _owner_dir(effective_user(request))
     if not owner_dir.is_dir():
         return []
@@ -120,7 +184,10 @@ def list_episodes(request: Request):
             continue
         try:
             timeline = json.loads(path.read_text(encoding="utf-8"))
+            if project_id is not None and timeline.get("project_id") != project_id:
+                continue
             result.append({"id": directory.name, "title": timeline["title"],
+                           "project_id": timeline.get("project_id"),
                            "duration": timeline["duration"],
                            "shot_count": len(timeline["tracks"]["video"]),
                            "revision": timeline.get("revision", 1),
@@ -129,6 +196,25 @@ def list_episodes(request: Request):
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return sorted(result, key=lambda item: item["updated_at"], reverse=True)[:100]
+
+
+@router.patch("/episodes/{episode_id}/project")
+def assign_episode_project(request: Request, episode_id: str, payload: EpisodeProjectInput):
+    owner = effective_user(request)
+    project_id = _validated_project(owner, payload.project_id)
+    directory = _episode_dir(owner, episode_id)
+    path = directory / "timeline.json"
+    if not path.is_file():
+        raise HTTPException(404, "Episode not found")
+    timeline = json.loads(path.read_text(encoding="utf-8"))
+    if (payload.expected_revision is not None
+            and payload.expected_revision != timeline.get("revision", 1)):
+        raise HTTPException(409, "Timeline changed; reload before assigning")
+    if timeline.get("project_id") != project_id:
+        timeline["project_id"] = project_id
+        timeline["revision"] = int(timeline.get("revision") or 1) + 1
+        save_timeline(timeline, directory)
+    return timeline
 
 
 @router.get("/episodes/{episode_id}/timeline")

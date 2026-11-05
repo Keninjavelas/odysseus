@@ -96,6 +96,7 @@ def delete_project(request: Request, project_id: str):
     owner = effective_user(request)
     db = SessionLocal()
     research_changes = []
+    studio_changes = []
     memory_manager = MemoryManager(DATA_DIR)
     memory_changes = []
     try:
@@ -111,6 +112,8 @@ def delete_project(request: Request, project_id: str):
             owner, None, from_project_id=project_id)
         from routes.research.research_routes import _clear_owned_research_project
         research_changes = _clear_owned_research_project(owner, project_id)
+        from routes.studio_routes import _clear_owned_studio_project
+        studio_changes = _clear_owned_studio_project(owner, project_id)
         db.delete(project)
         db.commit()
         return {"deleted": project_id}
@@ -119,6 +122,9 @@ def delete_project(request: Request, project_id: str):
         if research_changes:
             from routes.research.research_routes import _restore_research_projects
             _restore_research_projects(research_changes)
+        if studio_changes:
+            from routes.studio_routes import _restore_studio_projects
+            _restore_studio_projects(studio_changes)
         memory_manager.restore_project_assignments(memory_changes)
         raise
     finally:

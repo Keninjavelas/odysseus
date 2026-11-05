@@ -34,6 +34,18 @@
       api('/api/research/library?limit=50'),
     ]);
     [state.projects, state.sessions] = await Promise.all([api('/api/projects'), api('/api/sessions')]);
+    for (const id of ['episode-project', 'srt-project', 'episode-project-filter']) {
+      const select = $(id);
+      const current = select.value;
+      select.replaceChildren();
+      const general = node('option', id === 'episode-project-filter' ? 'All episodes' : 'General');
+      general.value = ''; select.append(general);
+      for (const project of state.projects) {
+        const option = node('option', project.name);
+        option.value = project.id; select.append(option);
+      }
+      if (current && state.projects.some((project) => project.id === current)) select.value = current;
+    }
     const modelSelect = $('live-eval-form').elements.source_session;
     modelSelect.replaceChildren();
     for (const session of state.sessions.filter((item) => item.model && item.endpoint_url)) {
@@ -123,6 +135,7 @@
       }));
       researchActions.append(researchSelect, assignResearch, removeResearch); card.append(researchActions);
     }
+    await loadEpisodes();
   }
   $('project-form').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -501,20 +514,37 @@
     });
   }
   async function loadEpisodes() {
-    const episodes = await api('/api/studio/episodes');
+    const projectId = $('episode-project-filter').value;
+    const episodes = await api(`/api/studio/episodes${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`);
     const list = $('episode-list'); list.replaceChildren();
     if (!episodes.length) list.append(node('p', 'No saved episodes yet.'));
     for (const episode of episodes) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', episode.title),
-                  node('small', `${episode.shot_count} shots · ${episode.duration} seconds · revision ${episode.revision}`));
+                  node('small', `${episode.shot_count} shots · ${episode.duration} seconds · revision ${episode.revision} · ${state.projects.find((project) => project.id === episode.project_id)?.name || 'General'}`));
       const open = node('button', 'Open timeline');
       open.addEventListener('click', () => run(async () => {
         const timeline = await api(`/api/studio/episodes/${episode.id}/timeline`);
         showEpisode(timeline, episode.has_preview ? `/api/studio/episodes/${episode.id}/preview` : null);
       }));
       card.append(node('div', undefined, 'card-actions'));
-      card.lastChild.append(open);
+      const projectSelect = node('select');
+      const general = node('option', 'General'); general.value = ''; projectSelect.append(general);
+      for (const project of state.projects) {
+        const option = node('option', project.name); option.value = project.id;
+        projectSelect.append(option);
+      }
+      projectSelect.value = episode.project_id || '';
+      const assign = node('button', 'Set project');
+      assign.addEventListener('click', () => run(async () => {
+        const timeline = await api(`/api/studio/episodes/${episode.id}/project`, jsonOptions('PATCH', {
+          project_id: projectSelect.value || null, expected_revision: episode.revision,
+        }));
+        if (state.episode?.episode_id === episode.id) showEpisode(timeline,
+          episode.has_preview ? `/api/studio/episodes/${episode.id}/preview` : null);
+        await loadEpisodes();
+      }));
+      card.lastChild.append(open, projectSelect, assign);
       list.append(card);
     }
   }
@@ -526,6 +556,7 @@
       const result = await api('/api/studio/episodes', jsonOptions('POST', {
         title: form.get('title'), outline: form.get('outline'),
         render_preview: form.has('render_preview'),
+        project_id: form.get('project_id') || null,
       }));
       showEpisode(result.timeline, result.preview_url);
       await loadEpisodes();
@@ -541,6 +572,7 @@
       await loadEpisodes();
     });
   });
+  $('episode-project-filter').addEventListener('change', () => run(loadEpisodes));
   $('render-episode').addEventListener('click', () => run(async () => {
     if (!state.episode) throw new Error('Open an episode first.');
     const timeline = state.episode;
@@ -578,5 +610,5 @@
   if (['#actions', '#evals', '#studio'].includes(window.location.hash)) {
     document.querySelector(`[data-tab="${window.location.hash.slice(1)}"]`)?.click();
   }
-  Promise.all([loadProjects(), loadActions(), loadCases(), loadEpisodes()]).catch((error) => notice(error.message || 'Could not load lab.'));
+  Promise.all([loadProjects(), loadActions(), loadCases()]).catch((error) => notice(error.message || 'Could not load lab.'));
 })();

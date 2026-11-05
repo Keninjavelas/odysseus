@@ -120,6 +120,7 @@
       <p>Turn outline beats into an editable timeline and a GPU-free storyboard MP4.</p>
       <form id="episode-form" class="stack-form">
         <label>Episode title <input name="title" required maxlength="160"></label>
+        <label>Project <select name="project_id" id="episode-project"></select></label>
         <label>Outline · one beat per line <textarea name="outline" rows="8" required placeholder="Opening shot and central question&#10;First fact and supporting visual&#10;Closing reflection"></textarea></label>
         <label class="check"><input type="checkbox" name="render_preview" checked> Render MP4 preview</label>
         <button>Create episode</button>
@@ -128,11 +129,13 @@
       <p>Import a UTF-8 SRT transcript to create shot cards with the original cue timecodes. Pauses become editable shots.</p>
       <form id="srt-form" class="stack-form">
         <label>Episode title <input name="title" required maxlength="160"></label>
+        <label>Project <select name="project_id" id="srt-project"></select></label>
         <label>SRT transcript <input name="transcript" type="file" accept=".srt,text/plain" required></label>
         <label class="check"><input type="checkbox" name="render"> Render MP4 preview now</label>
         <button>Import transcript</button>
       </form>
       <h3>Saved episodes</h3>
+      <label>Show project <select id="episode-project-filter"></select></label>
       <div id="episode-list" class="cards"></div>
       <div id="episode-result" class="subpanel" hidden>
         <h3 id="episode-title"></h3>

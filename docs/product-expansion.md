@@ -74,19 +74,22 @@ product experience described later in the roadmap is complete.
   from the matching source ranges, including pauses. An MP4, MOV, WebM, or MKV
   interview can also be attached to cut moving source video by cue timecode;
   its audio fills shots without a separate voice track. Original media stays
-  owner-private. Local transcription and background rendering are still pending.
+  owner-private. Episodes can be created in a project, filtered or reassigned
+  in Project Lab, and return to General when their project is deleted. Local
+  transcription and background rendering are still pending.
 - `/lab` exposes project creation and chat assignment, saved evaluation cases
   and trace grading, and the studio storyboard editor in the browser.
 
 ## Next implementation gates
 
-1. **Complete project context isolation.** Add project IDs to media and upload
+1. **Complete project context isolation.** Add project IDs to uploads and other media
    records, and require project filters in all remaining agent retrieval.
    Chats, Notes, and Documents now have project assignments and their main agent
    paths filter by project. Chat-originated research now carries a project, but
    memory recall and writes now distinguish global from project records.
-   Unfiltered manual research browsing, other document retrieval, uploads,
-   and media still need a full isolation audit and filters.
+   Studio episodes have project membership, while unfiltered manual research
+   browsing, other document retrieval, uploads, and media outside Studio still
+   need a full isolation audit and filters.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.

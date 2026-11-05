@@ -14,6 +14,65 @@ from services.studio.compiler import compile_storyboard, compile_subtitles, edit
 from routes import studio_routes
 
 
+def test_studio_episode_project_assignment_and_deletion(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from core import database
+    from routes import project_routes
+    from routes.research import research_routes
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    database.Base.metadata.create_all(engine, tables=[
+        database.Project.__table__, database.Session.__table__,
+        database.Note.__table__, database.Document.__table__])
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(database, "SessionLocal", factory)
+    monkeypatch.setattr(project_routes, "SessionLocal", factory)
+    monkeypatch.setattr(project_routes, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(project_routes, "effective_user", lambda request: request.owner)
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(studio_routes, "effective_user", lambda request: request.owner)
+    monkeypatch.setattr(research_routes, "_research_storage_root", lambda: tmp_path)
+    with factory() as db:
+        db.add(database.Project(id="film", owner="alice", name="Film"))
+        db.add(database.Project(id="private", owner="bob", name="Private"))
+        db.commit()
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    created = studio_routes.create_episode(alice, studio_routes.EpisodeInput(
+        title="Ocean", outline="Opening", render_preview=False, project_id="film"))
+    episode_id = created["timeline"]["episode_id"]
+    assert created["timeline"]["project_id"] == "film"
+    assert [episode["id"] for episode in studio_routes.list_episodes(alice, "film")] == [episode_id]
+    assert studio_routes.list_episodes(alice, "other") == []
+    with pytest.raises(HTTPException) as denied:
+        studio_routes.create_episode(alice, studio_routes.EpisodeInput(
+            title="Other", outline="Opening", render_preview=False, project_id="private"))
+    assert denied.value.status_code == 404
+    with pytest.raises(HTTPException) as denied:
+        studio_routes.assign_episode_project(bob, episode_id,
+            studio_routes.EpisodeProjectInput(project_id="private"))
+    assert denied.value.status_code == 404
+    moved = studio_routes.assign_episode_project(alice, episode_id,
+        studio_routes.EpisodeProjectInput(project_id=None, expected_revision=1))
+    assert moved["project_id"] is None and moved["revision"] == 2
+    with pytest.raises(HTTPException) as stale:
+        studio_routes.assign_episode_project(alice, episode_id,
+            studio_routes.EpisodeProjectInput(project_id="film", expected_revision=1))
+    assert stale.value.status_code == 409
+    studio_routes.assign_episode_project(alice, episode_id,
+        studio_routes.EpisodeProjectInput(project_id="film", expected_revision=2))
+    changes = studio_routes._clear_owned_studio_project("alice", "film")
+    assert len(changes) == 1
+    studio_routes._restore_studio_projects(changes)
+    project_routes.delete_project(alice, "film")
+    timeline = json.loads(studio_routes.get_timeline(alice, episode_id).path.read_text(encoding="utf-8"))
+    assert timeline["project_id"] is None
+    engine.dispose()
+
+
 def test_storyboard_produces_editable_aligned_tracks(tmp_path):
     timeline = compile_storyboard("Ocean Change", "Opening scene\nSpecies migrate north")
     assert timeline["duration"] == 6
