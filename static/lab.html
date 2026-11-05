@@ -87,7 +87,9 @@
         <p>The run starts a new evaluation chat with the selected model. Plan mode keeps tools read-only; the chat remains available for inspection.</p>
         <form id="live-eval-form" class="stack-form">
           <label>Case <select name="case_id" required></select></label>
-          <label>Model from an existing chat <select name="source_session" required></select></label>
+          <label>Models from existing chats (choose up to 3; Ctrl/Cmd-click for more)
+            <select name="source_session" multiple size="5" required></select>
+          </label>
           <label>Context profile <select name="context_profile">
             <option value="">Current setting</option>
             <option value="4k">4k</option><option value="8k">8k</option><option value="16k">16k</option>

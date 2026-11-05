@@ -101,13 +101,14 @@ product experience described later in the roadmap is complete.
    Project Lab. The read-only live runner can now use a per-turn profile cap or
    run the same saved case sequentially at 4k, 8k, and 16k, creating a fresh
    evaluation chat and graded run for each cap. The comparison itself does not
-   rerun or reshape the recorded request; broader model sweeps and trend views
-   remain to build.
+   rerun or reshape the recorded request; provider-specific tokenizer
+   validation remains to build.
 3. **Evaluation measurement and view.** Graded runs now retain reported or
    estimated USD cost when the runtime knows it, and Project Lab charts run
-   time, tokens, and cost over the latest 30 runs of a saved case. Profile
-   sweeps are available. Provider-verified latency, broader model sweeps, and
-   cost aggregation across multiple routed models remain to build. The live
+   time, tokens, and cost over the latest 30 runs of a saved case. Profiles
+   and up to three selected model chats can now be swept in one sequential,
+   read-only evaluation batch. Provider-verified latency and cost aggregation
+   across multiple routed models remain to build. The live
    runner uses plan mode, so effectful tool workflows still need isolated
    disposable fixtures before they can be evaluated safely.
 4. **Automatic action extraction.** Connect meeting pipelines to the review

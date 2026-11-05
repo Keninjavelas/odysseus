@@ -426,7 +426,7 @@
       }
     }
   }));
-  async function runLiveEvaluation(selectedCase, sourceSession, profile) {
+  async function runLiveEvaluation(selectedCase, sourceSession, profile, position, total) {
       const caseId = selectedCase.id;
       const newSession = new FormData();
       newSession.set('name', `[eval ${profile || 'auto'}] ${selectedCase.name}`);
@@ -437,7 +437,7 @@
       if (sourceSession.endpoint_id) newSession.set('endpoint_id', sourceSession.endpoint_id);
       if (sourceSession.project_id) newSession.set('project_id', sourceSession.project_id);
       const session = await api('/api/session', { method: 'POST', body: newSession });
-      notice(`Running read-only evaluation (${profile || 'current setting'})…`);
+      notice(`Running ${position}/${total}: ${sourceSession.model} · ${profile || 'current setting'}…`);
       const turn = new FormData();
       turn.set('message', selectedCase.prompt);
       turn.set('session', session.id);
@@ -473,18 +473,26 @@
       const form = new FormData(formElement);
       const caseId = String(form.get('case_id'));
       const selectedCase = state.cases.find((item) => item.id === caseId);
-      const sourceSession = state.sessions.find((item) => item.id === form.get('source_session'));
-      if (!selectedCase || !sourceSession) throw new Error('Choose a case and a model.');
+      const selectedIds = [...new Set(form.getAll('source_session').map(String))];
+      const sourceSessions = selectedIds.map((id) => state.sessions.find((item) => item.id === id));
+      if (!selectedCase || !sourceSessions.length || sourceSessions.some((item) => !item)) {
+        throw new Error('Choose a case and at least one model.');
+      }
+      if (sourceSessions.length > 3) throw new Error('Choose at most three model chats per sweep.');
       const choice = String(form.get('context_profile') || '');
       const profiles = choice === 'sweep' ? ['4k', '8k', '16k'] : [choice];
       const completed = [];
-      for (const profile of profiles) {
-        try {
-          const result = await runLiveEvaluation(selectedCase, sourceSession, profile);
-          completed.push(result.sessionId);
-          await showGrade(result.graded, caseId);
-        } catch (error) {
-          throw new Error(`${profile || 'Current setting'} failed after ${completed.length} saved run(s): ${error.message}`);
+      for (const sourceSession of sourceSessions) {
+        for (const profile of profiles) {
+          try {
+            const result = await runLiveEvaluation(
+              selectedCase, sourceSession, profile, completed.length + 1,
+              sourceSessions.length * profiles.length);
+            completed.push(result.sessionId);
+            await showGrade(result.graded, caseId);
+          } catch (error) {
+            throw new Error(`${sourceSession.model} · ${profile || 'current setting'} failed after ${completed.length} saved run(s): ${error.message}`);
+          }
         }
       }
       return `${completed.length} evaluation(s) saved. Chats: ${completed.join(', ')}.`;
