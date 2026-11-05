@@ -15,7 +15,8 @@ from src.constants import DEEP_RESEARCH_DIR
 from src.tools._common import _parse_tool_args
 
 
-async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
+async def do_manage_research(content: str, owner: Optional[str] = None,
+                             *, project_id: Optional[str] = None) -> Dict:
     """List, read/open, or delete saved deep-research results from the Library.
     Args (JSON): {"action": "list|read|delete", "id": "<id>", "search": "..."}.
     Research is stored as data/deep_research/<id>.json (query, summary, sources)."""
@@ -29,7 +30,7 @@ async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
         args = {}
     action = (args.get("action") or "list").lower()
     rid = (args.get("id") or args.get("session_id") or args.get("research_id") or "").strip()
-    data_dir = _Path(DEEP_RESEARCH_DIR)
+    data_dir = _Path(DEEP_RESEARCH_DIR).resolve()
 
     # SECURITY: the research id is interpolated straight into a filesystem
     # path (data/deep_research/<rid>.json) for read AND delete. Without this
@@ -42,7 +43,14 @@ async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
 
     def _load(p):
         try:
-            return _json.loads(p.read_text(encoding="utf-8"))
+            resolved = p.resolve()
+            resolved.relative_to(data_dir)
+            if not resolved.is_file():
+                return None
+            data = _json.loads(resolved.read_text(encoding="utf-8"))
+            if data.get("owner") != owner or data.get("project_id") != project_id:
+                return None
+            return data
         except Exception:
             return None
 
@@ -50,9 +58,9 @@ async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
         if not rid:
             return {"error": "Provide the research id (from action='list')."}
         p = data_dir / f"{rid}.json"
-        if not p.exists():
+        d = _load(p)
+        if not d:
             return {"error": f"Research '{rid}' not found."}
-        d = _load(p) or {}
         summary = d.get("result") or d.get("raw_report") or d.get("summary") or d.get("report") or "(no report body)"
         srcs = d.get("sources", []) or []
         out = f"# {d.get('query', '(untitled)')}\n\n{summary}"
@@ -66,9 +74,9 @@ async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
         if not rid:
             return {"error": "Provide the research id to delete (from action='list')."}
         p = data_dir / f"{rid}.json"
-        if p.exists():
+        if _load(p):
             try:
-                p.unlink()
+                p.resolve().unlink()
             except Exception as e:
                 return {"error": f"Failed to delete: {e}"}
             return {"output": f"Deleted research '{rid}'.", "exit_code": 0}

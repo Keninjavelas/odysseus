@@ -2404,7 +2404,13 @@ async def _execute_tool_block_impl(
         result = await dispatched(do_trigger_research(content, owner=owner, chat_session_id=session_id))
     elif tool == "manage_research":
         desc = "manage_research"
-        result = await dispatched(do_manage_research(content, owner=owner))
+        from core.database import Session as DbSession, SessionLocal as DbSessionLocal
+        with DbSessionLocal() as research_db:
+            research_chat = research_db.query(DbSession).filter(
+                DbSession.id == session_id, DbSession.owner == owner).first() if session_id else None
+            research_project_id = research_chat.project_id if research_chat else None
+        result = await dispatched(do_manage_research(
+            content, owner=owner, project_id=research_project_id))
     elif tool == "resolve_contact":
         desc = "resolve_contact"
         result = await dispatched(do_resolve_contact(content, owner=owner))

@@ -64,3 +64,33 @@ def test_instructions_route_report_reads_to_manage_research():
     # ...and explicitly away from fetching the HTML report endpoint.
     assert "/api/research/report/" in desc
     assert "web_fetch" in desc.lower() or "app_api" in desc.lower()
+
+
+async def test_manage_research_is_owner_and_project_scoped(tmp_path, monkeypatch):
+    from src.tools import research
+
+    monkeypatch.setattr(research, "DEEP_RESEARCH_DIR", str(tmp_path))
+    for rid, owner, project_id in [
+        ("general", "alice", None), ("film", "alice", "film"),
+        ("private", "bob", "film")]:
+        (tmp_path / f"{rid}.json").write_text(json.dumps({
+            "owner": owner, "project_id": project_id, "query": rid,
+            "result": f"Report {rid}", "completed_at": 123,
+        }), encoding="utf-8")
+
+    general = await do_manage_research('{"action":"list"}', owner="alice")
+    assert "general" in general["output"]
+    assert "film" not in general["output"] and "private" not in general["output"]
+    film = await do_manage_research('{"action":"list"}', owner="alice", project_id="film")
+    assert "film" in film["output"]
+    assert "general" not in film["output"] and "private" not in film["output"]
+    for rid in ("general", "private"):
+        denied = await do_manage_research(json.dumps({"action": "read", "id": rid}),
+                                          owner="alice", project_id="film")
+        assert "error" in denied
+        denied = await do_manage_research(json.dumps({"action": "delete", "id": rid}),
+                                          owner="alice", project_id="film")
+        assert "error" in denied and (tmp_path / f"{rid}.json").exists()
+    opened = await do_manage_research('{"action":"read","id":"film"}',
+                                      owner="alice", project_id="film")
+    assert "Report film" in opened["output"]
