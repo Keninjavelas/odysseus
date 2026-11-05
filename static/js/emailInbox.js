@@ -308,11 +308,12 @@ function _bindEvents() {
 
 function _maybeOpenFromHash() {
   const h = window.location.hash || '';
-  const m = h.match(/^#email=([^:]+):(\d+)/);
+  const m = h.match(/^#email=([^:]+):(\d+)(?::([^:]*))?/);
   if (!m) return;
   const folder = decodeURIComponent(m[1]);
   const uid = m[2];
-  try { openEmailLibrary({ folder, uid }); } catch (e) { console.error(e); }
+  const account_id = m[3] ? decodeURIComponent(m[3]) : undefined;
+  try { openEmailLibrary({ folder, uid, ...(account_id ? { account_id } : {}) }); } catch (e) { console.error(e); }
   // Clear the hash so reloads don't reopen
   try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (_) {}
 }
@@ -1163,6 +1164,31 @@ async function _openEmail(em, itemEl, preloadedData = null, mode = 'reply', note
   }
 }
 
+async function _proposeEmailActions(em) {
+  const uid = String(em?.uid || '');
+  const folder = _currentFolder || 'INBOX';
+  const accountId = em?.account_id || window.__odysseusActiveEmailAccount || '';
+  if (!/^\d+$/.test(uid)) return;
+  const query = new URLSearchParams({ folder });
+  if (accountId) query.set('account_id', accountId);
+  try {
+    const response = await fetch(`${API_BASE}/api/email/read/${encodeURIComponent(uid)}/propose-actions?${query}`, {
+      method: 'POST', credentials: 'same-origin',
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || 'Could not read this email.');
+    if (!result.created?.length) {
+      const ui = await import('./ui.js?v=20260916largetoolscroll1');
+      ui.showError?.('No new marked tasks found in this email.');
+      return;
+    }
+    window.location.assign('/lab#actions');
+  } catch (error) {
+    const ui = await import('./ui.js?v=20260916largetoolscroll1');
+    ui.showError?.(`Could not propose tasks: ${error.message || error}`);
+  }
+}
+
 function _showEmailMenu(em, anchor, itemEl) {
   document.querySelectorAll('.email-dropdown').forEach(dismissOrRemove);
 
@@ -1171,6 +1197,7 @@ function _showEmailMenu(em, anchor, itemEl) {
 
   const actions = [
     { label: 'Open', icon: _replyIcon, action: () => _openEmail(em, itemEl) },
+    { label: 'Propose tasks', icon: _bellIcon, action: () => _proposeEmailActions(em) },
     { label: 'Remind to reply', icon: _bellIcon, submenu: 'remind' },
     { label: 'Spam', icon: _spamIcon, action: () => _spamEmail(em) },
     { label: 'Archive', icon: _archiveIcon, action: () => _archiveEmail(em) },

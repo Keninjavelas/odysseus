@@ -28,6 +28,9 @@ product experience described later in the roadmap is complete.
   the current user and assigned to the current chat's project. Saved reports
   can be reassigned in Project Lab; deleting a project returns its reports to
   General along with its chats, notes, and documents.
+- The inbox message menu can propose explicitly marked tasks from an email
+  without marking it read. Proposals retain the account, folder, and UID so
+  Project Lab can reopen the originating message before checklist acceptance.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
   also be assigned to a project; the Notes agent tool reads and writes within
@@ -83,11 +86,12 @@ product experience described later in the roadmap is complete.
    metrics, repeatable model and profile sweeps, and trend charts across runs.
    The current live runner uses plan mode, so effectful tool workflows still
    need isolated disposable fixtures before they can be evaluated safely.
-4. **Automatic action extraction.** Connect email and meeting pipelines to the
-   review queue with verifiable source deep links. Note, document, and saved
-   research report extraction handle explicit task markers; unmarked prose and
-   external sources still need parsers and source verification. Research launched
-   from a project chat now retains that project in its saved report.
+4. **Automatic action extraction.** Connect meeting pipelines to the review
+   queue with verifiable source deep links. Email, note, document, and saved
+   research report extraction handle explicit task markers; unmarked prose,
+   recurring inbox scanning, and external sources still need parsers and source
+   verification. Research launched from a project chat retains that project in
+   its saved report.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, generated stills, batch voiceover,
    multilingual subtitle generation, and background FFmpeg jobs. The current preview uses placeholders

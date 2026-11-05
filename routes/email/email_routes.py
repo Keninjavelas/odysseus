@@ -4038,6 +4038,35 @@ def setup_email_routes():
                 _email_preview_cache_put(owner, account_id, folder, uid, cacheable)
         return result
 
+    @router.post("/read/{uid}/propose-actions", status_code=201)
+    async def propose_actions_from_email(
+        uid: str,
+        folder: str = Query("INBOX"),
+        account_id: str | None = Query(None),
+        owner: str = Depends(require_owner),
+    ):
+        from core.database import SessionLocal
+        from routes.action_routes import _extract_marked_actions, _propose_from_source
+
+        if not uid.isdecimal() or len(uid) > 32 or len(folder) > 200 or len(account_id or "") > 200:
+            raise HTTPException(422, "Invalid email reference")
+        message = await read_email_by_uid(
+            uid, folder=folder, account_id=account_id,
+            mark_seen=False, full=False, owner=owner)
+        if not isinstance(message, dict) or message.get("error"):
+            raise HTTPException(404, "Email not found")
+        body = message.get("body") or ""
+        if not isinstance(body, str):
+            body = ""
+        source_ref = json.dumps({
+            "account_id": account_id or "", "folder": folder, "uid": uid,
+        }, sort_keys=True)
+        with SessionLocal() as db:
+            result = _propose_from_source(db, owner, "email", source_ref,
+                                          _extract_marked_actions(body))
+        return {**result, "source_url": (
+            f"/#email={quote(folder, safe='')}:{uid}:{quote(account_id or '', safe='')}")}
+
     def _schedule_recent_email_warm(emails: list, folder: str, account_id: str | None, owner: str):
         if not emails or folder == "__scheduled__":
             return

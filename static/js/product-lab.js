@@ -165,14 +165,22 @@
       const card = node('article', undefined, 'card');
       card.append(node('h3', item.title),
                   node('small', `${item.source_kind}${item.source_ref ? ` · ${item.source_ref}` : ''}`));
-      if (item.source_ref && ['note', 'document', 'research'].includes(item.source_kind)) {
+      if (item.source_ref && ['note', 'document', 'research', 'email'].includes(item.source_kind)) {
         const source = node('a', 'Open source');
-        source.href = item.source_kind === 'note'
+        let emailRef;
+        if (item.source_kind === 'email') {
+          try { emailRef = JSON.parse(item.source_ref); } catch (_) { /* Manual reference. */ }
+        }
+        const href = item.source_kind === 'note'
           ? `/#open=notes&note=${encodeURIComponent(item.source_ref)}`
           : item.source_kind === 'document'
             ? `/#document-${encodeURIComponent(item.source_ref)}`
-            : `/#research-${encodeURIComponent(item.source_ref)}`;
-        card.append(source);
+            : item.source_kind === 'research'
+              ? `/#research-${encodeURIComponent(item.source_ref)}`
+              : emailRef?.uid && emailRef?.folder
+                ? `/#email=${encodeURIComponent(emailRef.folder)}:${encodeURIComponent(emailRef.uid)}:${encodeURIComponent(emailRef.account_id || '')}`
+                : '';
+        if (href) { source.href = href; card.append(source); }
       }
       if (item.source_excerpt) card.append(node('p', item.source_excerpt));
       const actionsRow = node('div', undefined, 'card-actions');
@@ -567,5 +575,8 @@
     return 'Source video attached. Render the MP4 preview when ready.';
   }));
 
+  if (['#actions', '#evals', '#studio'].includes(window.location.hash)) {
+    document.querySelector(`[data-tab="${window.location.hash.slice(1)}"]`)?.click();
+  }
   Promise.all([loadProjects(), loadActions(), loadCases(), loadEpisodes()]).catch((error) => notice(error.message || 'Could not load lab.'));
 })();
