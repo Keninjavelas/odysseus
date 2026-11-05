@@ -148,9 +148,9 @@
   });
 
   async function loadActions() {
-    const [actions, notesResult, documentsResult, researchResult] = await Promise.all([
+    const [actions, notesResult, documentsResult, researchResult, episodes] = await Promise.all([
       api('/api/actions'), api('/api/notes'), api('/api/documents/library?limit=50'),
-      api('/api/research/library?limit=50'),
+      api('/api/research/library?limit=50'), api('/api/studio/episodes'),
     ]);
     const openNotes = (notesResult.notes || []).filter((note) => !note.archived);
     state.notes = openNotes.filter((note) => note.note_type === 'checklist');
@@ -172,17 +172,26 @@
       const option = node('option', report.query || 'Untitled report');
       option.value = report.id; researchSelect.append(option);
     }
+    const studioSelect = $('action-source-studio'); studioSelect.replaceChildren();
+    studioSelect.append(node('option', 'Choose a saved episode')); studioSelect.firstChild.value = '';
+    for (const episode of episodes) {
+      const option = node('option', episode.title || 'Untitled episode');
+      option.value = episode.id; studioSelect.append(option);
+    }
     const list = $('action-list'); list.replaceChildren();
     if (!actions.length) list.append(node('p', 'No pending proposals.'));
     for (const item of actions) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', item.title),
                   node('small', `${item.source_kind}${item.source_ref ? ` · ${item.source_ref}` : ''}`));
-      if (item.source_ref && ['note', 'document', 'research', 'email'].includes(item.source_kind)) {
+      if (item.source_ref && ['note', 'document', 'research', 'email', 'meeting'].includes(item.source_kind)) {
         const source = node('a', 'Open source');
-        let emailRef;
+        let emailRef, meetingRef;
         if (item.source_kind === 'email') {
           try { emailRef = JSON.parse(item.source_ref); } catch (_) { /* Manual reference. */ }
+        }
+        if (item.source_kind === 'meeting') {
+          try { meetingRef = JSON.parse(item.source_ref); } catch (_) { /* Manual reference. */ }
         }
         const href = item.source_kind === 'note'
           ? `/#open=notes&note=${encodeURIComponent(item.source_ref)}`
@@ -190,6 +199,8 @@
             ? `/#document-${encodeURIComponent(item.source_ref)}`
             : item.source_kind === 'research'
               ? `/#research-${encodeURIComponent(item.source_ref)}`
+              : meetingRef?.episode_id && meetingRef?.shot_id
+                ? `/lab?episode=${encodeURIComponent(meetingRef.episode_id)}&shot=${encodeURIComponent(meetingRef.shot_id)}#studio`
               : emailRef?.uid && emailRef?.folder
                 ? `/#email=${encodeURIComponent(emailRef.folder)}:${encodeURIComponent(emailRef.uid)}:${encodeURIComponent(emailRef.account_id || '')}`
                 : '';
@@ -248,6 +259,13 @@
     const result = await api(`/api/actions/from-research/${encodeURIComponent(sessionId)}`, { method: 'POST' });
     await loadActions();
     return `${result.created.length} new proposal(s) from the report; ${result.skipped} already reviewed or pending.`;
+  }));
+  $('extract-studio-actions').addEventListener('click', () => run(async () => {
+    const episodeId = $('action-source-studio').value;
+    if (!episodeId) throw new Error('Choose a source episode first.');
+    const result = await api(`/api/actions/from-studio/${encodeURIComponent(episodeId)}`, { method: 'POST' });
+    await loadActions();
+    return `${result.created.length} new proposal(s) from the transcript; ${result.skipped} already reviewed or pending.`;
   }));
 
   async function loadCases() {
@@ -512,6 +530,7 @@
     const list = $('shot-list'); list.replaceChildren();
     timeline.tracks.video.forEach((shot, index) => {
       const card = node('article', undefined, 'card');
+      card.id = `studio-${shot.id}`;
       card.append(node('h3', `Shot ${index + 1}`));
       if (shot.video_path) card.append(node('small', `Source video ${shot.source_start}s–${shot.source_end}s`));
       if (shot.media_path) {
@@ -715,5 +734,16 @@
   if (['#actions', '#evals', '#studio'].includes(window.location.hash)) {
     document.querySelector(`[data-tab="${window.location.hash.slice(1)}"]`)?.click();
   }
-  Promise.all([loadProjects(), loadActions(), loadCases()]).catch((error) => notice(error.message || 'Could not load lab.'));
+  Promise.all([loadProjects(), loadActions(), loadCases()]).then(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const episodeId = params.get('episode'), shotId = params.get('shot');
+    if (!episodeId || !/^[0-9a-f-]{36}$/.test(episodeId)) return;
+    document.querySelector('[data-tab="studio"]')?.click();
+    const timeline = await api(`/api/studio/episodes/${encodeURIComponent(episodeId)}/timeline`);
+    showEpisode(timeline, null);
+    if (shotId) requestAnimationFrame(() => {
+      const sourceShot = document.getElementById(`studio-${shotId}`);
+      if (sourceShot) { sourceShot.classList.add('source-shot'); sourceShot.scrollIntoView({ block: 'center' }); }
+    });
+  }).catch((error) => notice(error.message || 'Could not load lab.'));
 })();

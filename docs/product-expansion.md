@@ -112,11 +112,13 @@ product experience described later in the roadmap is complete.
    runner uses plan mode, so effectful tool workflows still need isolated
    disposable fixtures before they can be evaluated safely.
 4. **Automatic action extraction.** Connect meeting pipelines to the review
-   queue with verifiable source deep links. Email, note, document, and saved
-   research report extraction handle explicit task markers; unmarked prose,
-   recurring inbox scanning, and external sources still need parsers and source
-   verification. Research launched from a project chat retains that project in
-   its saved report.
+   queue with verifiable source deep links. Studio episodes now propose marked
+   tasks from timed narration cues, link each proposal to its shot, and recheck
+   the source text and project when a checklist accepts it. Email, note,
+   document, and saved research report extraction also handle explicit task
+   markers. Unmarked prose, recurring inbox scanning, and external sources
+   still need parsers and source verification. Research launched from a
+   project chat retains that project in its saved report.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, generated stills, batch voiceover,
    multilingual subtitle generation, and background FFmpeg jobs. The current preview uses placeholders

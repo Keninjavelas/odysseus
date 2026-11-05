@@ -79,6 +79,50 @@ def _owned_research_data(session_id: str, owner: str) -> dict | None:
     return data if data.get("owner") == owner else None
 
 
+def _owned_studio_timeline(episode_id: str, owner: str) -> dict | None:
+    from routes.studio_routes import _episode_dir, _owner_dir
+
+    try:
+        path = (_episode_dir(owner, episode_id) / "timeline.json").resolve()
+        path.relative_to(_owner_dir(owner).resolve())
+        timeline = json.loads(path.read_text(encoding="utf-8"))
+    except (HTTPException, OSError, ValueError, TypeError):
+        return None
+    if (not isinstance(timeline, dict) or timeline.get("episode_id") != episode_id
+            or not isinstance(timeline.get("tracks"), dict)):
+        return None
+    return timeline
+
+
+def _studio_reference(episode_id: str, shot_id: str) -> str:
+    return json.dumps({"episode_id": episode_id, "shot_id": shot_id},
+                      sort_keys=True, separators=(",", ":"))
+
+
+def _studio_source(reference: str, owner: str, title: str) -> dict | None:
+    try:
+        locator = json.loads(reference)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(locator, dict) or set(locator) != {"episode_id", "shot_id"}:
+        return None
+    episode_id, shot_id = locator["episode_id"], locator["shot_id"]
+    if not isinstance(episode_id, str) or not isinstance(shot_id, str):
+        return None
+    timeline = _owned_studio_timeline(episode_id, owner)
+    if timeline is None:
+        return None
+    narration = timeline.get("tracks", {}).get("narration", [])
+    if not isinstance(narration, list):
+        return None
+    for clip in narration:
+        if isinstance(clip, dict) and clip.get("id") == shot_id:
+            if any(found.casefold() == title.casefold() for found, _ in
+                   _extract_marked_actions(str(clip.get("text") or ""))):
+                return timeline
+    return None
+
+
 def _propose_from_source(db, owner: str, source_kind: str, source_ref: str,
                          extracted: list[tuple[str, str]]) -> dict:
     existing = {row.title.casefold() for row in db.query(ActionCandidate).filter(
@@ -217,6 +261,63 @@ def propose_actions_from_research(request: Request, session_id: str):
         db.close()
 
 
+@router.post("/from-studio/{episode_id}", status_code=201)
+def propose_actions_from_studio(request: Request, episode_id: str):
+    owner = effective_user(request)
+    timeline = _owned_studio_timeline(episode_id, owner)
+    if timeline is None:
+        raise HTTPException(404, "Source episode not found")
+    narration = timeline.get("tracks", {}).get("narration", [])
+    if not isinstance(narration, list):
+        raise HTTPException(422, "Episode narration is malformed")
+    extracted = []
+    seen = set()
+    for clip in narration:
+        if not isinstance(clip, dict) or not isinstance(clip.get("id"), str):
+            continue
+        for title, excerpt in _extract_marked_actions(str(clip.get("text") or "")):
+            if title.casefold() in seen:
+                continue
+            seen.add(title.casefold())
+            source_start = clip.get("source_start")
+            source_end = clip.get("source_end")
+            try:
+                start = float(source_start if isinstance(source_start, (int, float)) else clip.get("start", 0))
+                end = float(source_end if isinstance(source_end, (int, float)) else start + float(clip.get("duration") or 0))
+            except (TypeError, ValueError):
+                continue
+            extracted.append((title, f"{start:.1f}–{end:.1f}s · {excerpt}",
+                              _studio_reference(episode_id, clip["id"])))
+            if len(extracted) >= 20:
+                break
+        if len(extracted) >= 20:
+            break
+    db = SessionLocal()
+    try:
+        refs = [reference for _, _, reference in extracted]
+        existing = {(row.source_ref, row.title.casefold()) for row in
+                    db.query(ActionCandidate).filter(
+                        ActionCandidate.owner == owner,
+                        ActionCandidate.source_kind == "meeting",
+                        ActionCandidate.source_ref.in_(refs)).all()} if refs else set()
+        created = []
+        for title, excerpt, reference in extracted:
+            if (reference, title.casefold()) in existing:
+                continue
+            candidate = ActionCandidate(id=str(uuid.uuid4()), owner=owner,
+                                        title=title, source_kind="meeting",
+                                        source_ref=reference,
+                                        source_excerpt=excerpt[:2000], status="pending")
+            db.add(candidate)
+            created.append(candidate)
+        db.commit()
+        return {"created": [_payload(candidate) for candidate in created],
+                "skipped": len(extracted) - len(created),
+                "source_url": f"/lab?episode={episode_id}#studio"}
+    finally:
+        db.close()
+
+
 @router.post("/{candidate_id}/accept")
 def accept_action(request: Request, candidate_id: str, payload: AcceptInput):
     owner = effective_user(request)
@@ -228,6 +329,12 @@ def accept_action(request: Request, candidate_id: str, payload: AcceptInput):
         note = db.query(Note).filter(Note.id == payload.note_id, Note.owner == owner).first()
         if note is None or note.note_type not in {"checklist", "todo", "goal"} or note.archived:
             raise HTTPException(404, "Open checklist not found")
+        if candidate.source_kind == "meeting" and candidate.source_ref.lstrip().startswith("{"):
+            source = _studio_source(candidate.source_ref, owner, candidate.title)
+            if source is None:
+                raise HTTPException(409, "Source shot or marked action is no longer available")
+            if source.get("project_id") != note.project_id:
+                raise HTTPException(409, "Source and checklist belong to different projects")
         if candidate.source_kind in {"note", "document", "research"}:
             if candidate.source_kind == "note":
                 source = db.query(Note).filter(Note.id == candidate.source_ref,

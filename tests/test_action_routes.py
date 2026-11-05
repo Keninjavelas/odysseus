@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from core.database import ActionCandidate, Base, Document, Note, Session
 from routes import action_routes
 from routes.research import research_routes
+from routes import studio_routes
+from services.studio.compiler import compile_subtitles, save_timeline
 
 
 @pytest.fixture
@@ -147,3 +149,41 @@ def test_research_task_extraction_checks_owner_project_and_source(action_db, tmp
     assert wrong_project.value.status_code == 409
     assert action_routes.accept_action(alice, proposal_id,
                                        action_routes.AcceptInput(note_id="film-list"))["status"] == "accepted"
+
+
+def test_studio_transcript_actions_link_shots_and_recheck_source(action_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(studio_routes, "get_default_data_dir", lambda: tmp_path)
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    timeline = compile_subtitles("Interview", (
+        "1\n00:00:01,000 --> 00:00:03,000\nACTION: Send review link\n\n"
+        "2\n00:00:03,000 --> 00:00:05,000\nTODO: Approve title card\n"))
+    timeline["project_id"] = "film"
+    directory = studio_routes._episode_dir("alice", timeline["episode_id"])
+    save_timeline(timeline, directory)
+    with action_db() as db:
+        db.add(Note(id="film-list", owner="alice", project_id="film", title="Film tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.add(Note(id="general-list", owner="alice", title="General tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.commit()
+    result = action_routes.propose_actions_from_studio(alice, timeline["episode_id"])
+    assert [item["title"] for item in result["created"]] == ["Send review link", "Approve title card"]
+    assert result["created"][0]["source_excerpt"].startswith("1.0–3.0s")
+    assert json.loads(result["created"][0]["source_ref"])["shot_id"] == "shot-002"
+    assert action_routes.propose_actions_from_studio(alice, timeline["episode_id"])["skipped"] == 2
+    with pytest.raises(HTTPException) as denied:
+        action_routes.propose_actions_from_studio(bob, timeline["episode_id"])
+    assert denied.value.status_code == 404
+    with pytest.raises(HTTPException) as wrong_project:
+        action_routes.accept_action(alice, result["created"][0]["id"],
+                                    action_routes.AcceptInput(note_id="general-list"))
+    assert wrong_project.value.status_code == 409
+    assert action_routes.accept_action(alice, result["created"][0]["id"],
+                                       action_routes.AcceptInput(note_id="film-list"))["status"] == "accepted"
+    timeline["tracks"]["narration"][2]["text"] = "No action here"
+    save_timeline(timeline, directory)
+    with pytest.raises(HTTPException) as stale:
+        action_routes.accept_action(alice, result["created"][1]["id"],
+                                    action_routes.AcceptInput(note_id="film-list"))
+    assert stale.value.status_code == 409
