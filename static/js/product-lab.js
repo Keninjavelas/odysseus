@@ -363,17 +363,10 @@
       }
     }
   }));
-  $('live-eval-form').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    run(async () => {
-      const form = new FormData(formElement);
-      const caseId = String(form.get('case_id'));
-      const selectedCase = state.cases.find((item) => item.id === caseId);
-      const sourceSession = state.sessions.find((item) => item.id === form.get('source_session'));
-      if (!selectedCase || !sourceSession) throw new Error('Choose a case and a model.');
+  async function runLiveEvaluation(selectedCase, sourceSession, profile) {
+      const caseId = selectedCase.id;
       const newSession = new FormData();
-      newSession.set('name', `[eval] ${selectedCase.name}`);
+      newSession.set('name', `[eval ${profile || 'auto'}] ${selectedCase.name}`);
       newSession.set('endpoint_url', sourceSession.endpoint_url);
       newSession.set('model', sourceSession.model);
       newSession.set('skip_validation', 'true');
@@ -381,12 +374,13 @@
       if (sourceSession.endpoint_id) newSession.set('endpoint_id', sourceSession.endpoint_id);
       if (sourceSession.project_id) newSession.set('project_id', sourceSession.project_id);
       const session = await api('/api/session', { method: 'POST', body: newSession });
-      notice('Running read-only evaluation…');
+      notice(`Running read-only evaluation (${profile || 'current setting'})…`);
       const turn = new FormData();
       turn.set('message', selectedCase.prompt);
       turn.set('session', session.id);
       turn.set('mode', 'agent');
       turn.set('plan_mode', 'true');
+      if (profile) turn.set('context_profile', profile);
       const response = await fetch('/api/chat_stream', { method: 'POST', body: turn,
         headers: { Accept: 'text/event-stream' }, credentials: 'same-origin' });
       if (!response.ok) throw new Error(`Chat run failed: HTTP ${response.status}`);
@@ -404,10 +398,33 @@
         } catch (_) { /* Native decoder will report malformed records. */ }
       }
       const graded = await api(`/api/evals/cases/${caseId}/grade-native`, jsonOptions('POST', {
-        model_label: sourceSession.model, response_text: finalText || visible, records,
+        model_label: `${sourceSession.model} · ${profile || 'current setting'}`,
+        response_text: finalText || visible, records,
       }));
-      await showGrade(graded, caseId);
-      return `Evaluation saved. Chat ${session.id} is available for inspection.`;
+      return { graded, sessionId: session.id };
+  }
+  $('live-eval-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    run(async () => {
+      const form = new FormData(formElement);
+      const caseId = String(form.get('case_id'));
+      const selectedCase = state.cases.find((item) => item.id === caseId);
+      const sourceSession = state.sessions.find((item) => item.id === form.get('source_session'));
+      if (!selectedCase || !sourceSession) throw new Error('Choose a case and a model.');
+      const choice = String(form.get('context_profile') || '');
+      const profiles = choice === 'sweep' ? ['4k', '8k', '16k'] : [choice];
+      const completed = [];
+      for (const profile of profiles) {
+        try {
+          const result = await runLiveEvaluation(selectedCase, sourceSession, profile);
+          completed.push(result.sessionId);
+          await showGrade(result.graded, caseId);
+        } catch (error) {
+          throw new Error(`${profile || 'Current setting'} failed after ${completed.length} saved run(s): ${error.message}`);
+        }
+      }
+      return `${completed.length} evaluation(s) saved. Chats: ${completed.join(', ')}.`;
     });
   });
 

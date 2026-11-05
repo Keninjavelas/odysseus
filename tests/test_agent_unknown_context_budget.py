@@ -25,7 +25,7 @@ def _event(payload):
     return 'data: ' + json.dumps(payload) + '\n\n'
 
 
-async def _first_request(monkeypatch, tmp_path, context_window):
+async def _first_request(monkeypatch, tmp_path, context_window, context_profile=None):
     import src.agent_loop as al
     from tests.test_agent_runtime_context import _patch_fake_skills
     _patch_fake_skills(monkeypatch)
@@ -51,7 +51,8 @@ async def _first_request(monkeypatch, tmp_path, context_window):
         {'role': 'user', 'content': 'What is the alias of Project-Alpha?'},
     ]
     async for _ in al.stream_agent_loop('http://127.0.0.1:9/v1', 'model', history,
-                                        max_rounds=1, workspace=str(tmp_path)):
+                                        max_rounds=1, workspace=str(tmp_path),
+                                        context_profile=context_profile):
         pass
     assert seen, 'the provider was never called'
     return json.dumps(seen[0])
@@ -69,3 +70,11 @@ async def test_known_small_window_is_still_clamped(monkeypatch, tmp_path):
     # 2048 here); it must keep protecting them.
     request = await _first_request(monkeypatch, tmp_path, 2048)
     assert MARKER not in request
+
+
+@pytest.mark.asyncio
+async def test_profile_override_clamps_a_large_discovered_window(monkeypatch, tmp_path):
+    small_request = await _first_request(monkeypatch, tmp_path, 128000, "4k")
+    large_request = await _first_request(monkeypatch, tmp_path, 128000, "16k")
+    assert MARKER not in small_request
+    assert MARKER in large_request

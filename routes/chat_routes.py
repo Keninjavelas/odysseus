@@ -2525,6 +2525,13 @@ def setup_chat_routes(
                 raise HTTPException(400, "temperature must be a number between 0 and 2")
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
+        context_profile_override = str(
+            form_data.get("context_profile") or (body or {}).get("context_profile") or ""
+        ).strip().lower()
+        if context_profile_override and context_profile_override not in {"4k", "8k", "16k"}:
+            raise HTTPException(422, "context_profile must be 4k, 8k, or 16k")
+        if context_profile_override and not plan_mode:
+            raise HTTPException(422, "context_profile override requires read-only plan mode")
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
         client_runtime_context = None
         raw_client_runtime_context = (
@@ -4800,6 +4807,7 @@ def setup_chat_routes(
                         max_tool_calls=_tool_budget,
                         max_rounds=_max_rounds,
                         context_length=_selected_context_length,
+                        context_profile=context_profile_override or None,
                         active_document=active_doc,
                         active_email=active_email_ctx,
                         session_id=session,

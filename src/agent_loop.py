@@ -21404,6 +21404,7 @@ async def stream_agent_loop(
     _parent_run_id: Optional[str] = None,
     request_authority=MISSING_AUTHORITY,
     context_resolution=None,
+    context_profile: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Streaming agent loop generator.
 
@@ -21418,7 +21419,7 @@ async def stream_agent_loop(
 
     # Caller and credential denials remain absolute across contract routing.
     from src.context_budget import profile_context_window
-    _context_profile = str(get_setting("agent_context_profile", "auto") or "auto")
+    _context_profile = str(context_profile or get_setting("agent_context_profile", "auto") or "auto")
     context_length = profile_context_window(context_length, _context_profile)
     disabled_tools = set(disabled_tools or ())
     if delegated_credential:

@@ -94,8 +94,11 @@ product experience described later in the roadmap is complete.
    run saved eval cases against each profile. Graded runs now record the peak
    prompt and tool-schema estimates from routing audits and compare that
    recorded request with 4k/8k/16k caps plus the runtime safety margin in
-   Project Lab. This comparison does not rerun or reshape the request;
-   repeatable live sweeps across profiles remain to build.
+   Project Lab. The read-only live runner can now use a per-turn profile cap or
+   run the same saved case sequentially at 4k, 8k, and 16k, creating a fresh
+   evaluation chat and graded run for each cap. The comparison itself does not
+   rerun or reshape the recorded request; broader model sweeps and trend views
+   remain to build.
 3. **Evaluation measurement and view.** Add cost and provider-verified latency
    metrics, repeatable model and profile sweeps, and trend charts across runs.
    The current live runner uses plan mode, so effectful tool workflows still
