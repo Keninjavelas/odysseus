@@ -123,6 +123,9 @@ async def test_research_start_binds_owner_and_uses_quick_chat_default_only(store
     from src.background_tool_jobs import BackgroundToolJobs
     monkeypatch.setenv('AUTH_ENABLED', 'false')
     monkeypatch.setattr(research_routes, 'resolve_endpoint', lambda *a, **kw: ('http://model.test', 'test', {}))
+    with store() as db:
+        db.get(database.Session, 'origin').project_id = 'film'
+        db.commit()
     started = []
     class ResearchService:
         def start_research(self, **kwargs): started.append(kwargs)
@@ -140,6 +143,7 @@ async def test_research_start_binds_owner_and_uses_quick_chat_default_only(store
         response = await client.post('/api/research/start', json=body)
         assert response.status_code == 200, response.text
         assert started[0]['max_rounds'] == expected
+        assert started[0]['project_id'] == ('film' if origin else None)
         assert bool(started[0]['on_complete']) == bool(origin)
         rows = (await client.get('/api/research/chat-jobs/origin')).json()['jobs']
         assert len(rows) == (1 if origin else 0)

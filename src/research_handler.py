@@ -272,6 +272,7 @@ class ResearchHandler:
         extraction_timeout: int = None,
         extraction_concurrency: int = None,
         owner: str = "",
+        project_id: str = None,
     ) -> dict:
         """Start research as a background task. Returns task info dict.
 
@@ -321,6 +322,7 @@ class ResearchHandler:
             "mode": "research",
             # SECURITY: track ownership so all reads / saves can filter by user.
             "owner": owner or "",
+            "project_id": project_id,
         }
         self._active_tasks[session_id] = entry
 
@@ -781,6 +783,7 @@ class ResearchHandler:
                 "completed_at": time.time(),
                 # SECURITY: stamp owner so route handlers can filter by user.
                 "owner": entry.get("owner", ""),
+                "project_id": entry.get("project_id"),
             }
             path.write_text(json.dumps(data), encoding="utf-8")
             logger.info(f"Research result saved to {path}")

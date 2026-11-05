@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from core.database import ActionCandidate, Base, Document, Note, Session
 from routes import action_routes
+from routes.research import research_routes
 
 
 @pytest.fixture
@@ -109,3 +110,40 @@ def test_document_task_extraction_links_source_and_keeps_project(action_db):
     accepted = action_routes.accept_action(alice, result["created"][0]["id"],
                                            action_routes.AcceptInput(note_id="film-list"))
     assert accepted["status"] == "accepted"
+
+
+def test_research_task_extraction_checks_owner_project_and_source(action_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(research_routes, "_research_storage_root", lambda: tmp_path)
+    (tmp_path / "rp-one.json").write_text(json.dumps({
+        "owner": "alice", "project_id": "film", "query": "Editing research",
+        "raw_report": "Background only\nTODO: Confirm source rights\n- [ ] Request archive scan\n"
+                      "Action: Confirm source rights", "result": "Next step: Ignore fallback",
+    }), encoding="utf-8")
+    alice = SimpleNamespace(owner="alice")
+    bob = SimpleNamespace(owner="bob")
+    with action_db() as db:
+        db.add(Note(id="film-list", owner="alice", project_id="film", title="Film tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.add(Note(id="general-list", owner="alice", title="General tasks",
+                    note_type="checklist", items="[]", archived=False))
+        db.commit()
+    result = action_routes.propose_actions_from_research(alice, "rp-one")
+    assert [item["title"] for item in result["created"]] == [
+        "Confirm source rights", "Request archive scan"]
+    assert result["source_url"] == "/#research-rp-one"
+    assert result["created"][0]["source_excerpt"].startswith("Line 2:")
+    assert action_routes.propose_actions_from_research(alice, "rp-one")["skipped"] == 2
+    with pytest.raises(HTTPException) as denied:
+        action_routes.propose_actions_from_research(bob, "rp-one")
+    assert denied.value.status_code == 404
+    with pytest.raises(HTTPException) as denied:
+        action_routes.create_action(bob, action_routes.CandidateInput(
+            title="Read private report", source_kind="research", source_ref="rp-one"))
+    assert denied.value.status_code == 404
+    proposal_id = result["created"][0]["id"]
+    with pytest.raises(HTTPException) as wrong_project:
+        action_routes.accept_action(alice, proposal_id,
+                                    action_routes.AcceptInput(note_id="general-list"))
+    assert wrong_project.value.status_code == 409
+    assert action_routes.accept_action(alice, proposal_id,
+                                       action_routes.AcceptInput(note_id="film-list"))["status"] == "accepted"

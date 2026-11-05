@@ -109,8 +109,9 @@
   });
 
   async function loadActions() {
-    const [actions, notesResult, documentsResult] = await Promise.all([
+    const [actions, notesResult, documentsResult, researchResult] = await Promise.all([
       api('/api/actions'), api('/api/notes'), api('/api/documents/library?limit=50'),
+      api('/api/research/library?limit=50'),
     ]);
     const openNotes = (notesResult.notes || []).filter((note) => !note.archived);
     state.notes = openNotes.filter((note) => note.note_type === 'checklist');
@@ -126,17 +127,25 @@
       const option = node('option', doc.title || 'Untitled document');
       option.value = doc.id; documentSelect.append(option);
     }
+    const researchSelect = $('action-source-research'); researchSelect.replaceChildren();
+    researchSelect.append(node('option', 'Choose a recent report')); researchSelect.firstChild.value = '';
+    for (const report of researchResult.research || []) {
+      const option = node('option', report.query || 'Untitled report');
+      option.value = report.id; researchSelect.append(option);
+    }
     const list = $('action-list'); list.replaceChildren();
     if (!actions.length) list.append(node('p', 'No pending proposals.'));
     for (const item of actions) {
       const card = node('article', undefined, 'card');
       card.append(node('h3', item.title),
                   node('small', `${item.source_kind}${item.source_ref ? ` · ${item.source_ref}` : ''}`));
-      if (item.source_ref && ['note', 'document'].includes(item.source_kind)) {
+      if (item.source_ref && ['note', 'document', 'research'].includes(item.source_kind)) {
         const source = node('a', 'Open source');
         source.href = item.source_kind === 'note'
           ? `/#open=notes&note=${encodeURIComponent(item.source_ref)}`
-          : `/#document-${encodeURIComponent(item.source_ref)}`;
+          : item.source_kind === 'document'
+            ? `/#document-${encodeURIComponent(item.source_ref)}`
+            : `/#research-${encodeURIComponent(item.source_ref)}`;
         card.append(source);
       }
       if (item.source_excerpt) card.append(node('p', item.source_excerpt));
@@ -185,6 +194,13 @@
     const result = await api(`/api/actions/from-document/${encodeURIComponent(documentId)}`, { method: 'POST' });
     await loadActions();
     return `${result.created.length} new proposal(s) from the document; ${result.skipped} already reviewed or pending.`;
+  }));
+  $('extract-research-actions').addEventListener('click', () => run(async () => {
+    const sessionId = $('action-source-research').value;
+    if (!sessionId) throw new Error('Choose a source report first.');
+    const result = await api(`/api/actions/from-research/${encodeURIComponent(sessionId)}`, { method: 'POST' });
+    await loadActions();
+    return `${result.created.length} new proposal(s) from the report; ${result.skipped} already reviewed or pending.`;
   }));
 
   async function loadCases() {

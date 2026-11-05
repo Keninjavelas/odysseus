@@ -4121,6 +4121,11 @@ def setup_chat_routes(
                     )
                     logger.info(f"Research query: {_research_query[:120]}")
 
+                    from core.database import SessionLocal as DbSessionLocal, Session as DbSession
+                    with DbSessionLocal() as _project_db:
+                        _project_chat = _project_db.query(DbSession).filter(
+                            DbSession.id == session, DbSession.owner == _user).first()
+                        _research_project_id = _project_chat.project_id if _project_chat else None
                     research_handler.start_research(
                         session, _research_query, _r_ep, _r_model,
                         llm_headers=_r_headers,
@@ -4129,6 +4134,7 @@ def setup_chat_routes(
                         prior_urls=_prior_urls,
                         on_complete=_on_research_done,
                         owner=_user,
+                        project_id=_research_project_id,
                     )
 
                     _heartbeat_counter = 0

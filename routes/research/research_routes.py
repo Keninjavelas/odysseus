@@ -563,12 +563,14 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                 user = tool_owner
         session_id = f"rp-{uuid.uuid4().hex[:12]}"
         delivery = getattr(request.app.state, 'background_tool_jobs', None)
+        project_id = None
         if body.origin_chat_id:
             from core.database import SessionLocal, Session as DbSession
             with SessionLocal() as db:
                 origin = db.get(DbSession, body.origin_chat_id)
                 if origin is None or origin.owner != user:
                     raise HTTPException(404, 'Origin chat not found')
+                project_id = origin.project_id
             if delivery is None:
                 raise HTTPException(503, 'Background chat delivery is unavailable')
 
@@ -639,6 +641,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             extraction_timeout=body.extraction_timeout,
             extraction_concurrency=body.extraction_concurrency,
             owner=user,
+            project_id=project_id,
             on_complete=(lambda sid, result, sources, findings: delivery.complete(sid, result, sources))
                 if body.origin_chat_id else None,
         )

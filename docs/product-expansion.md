@@ -19,9 +19,10 @@ product experience described later in the roadmap is complete.
   task can be accepted into an owner-owned checklist or rejected; duplicate
   proposals and duplicate checklist items are detected. The lab can extract
   explicitly marked TODO, Action, Next step, Follow up, and unchecked checklist
-  lines from a note into proposals. Note and document proposals link directly
-  to their source; marked document lines can be extracted the same way.
-  Accepting a note or document proposal into a checklist requires the same project.
+  lines from a note into proposals. Note, document, and saved research report
+  proposals link directly to their source. Accepting one into a checklist
+  requires the same project. Research launched from a project chat persists
+  that assignment with its report.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
   also be assigned to a project; the Notes agent tool reads and writes within
@@ -64,11 +65,12 @@ product experience described later in the roadmap is complete.
 
 ## Next implementation gates
 
-1. **Complete project context isolation.** Add project IDs to memory, research,
-   and media records, and require project filters in all agent retrieval.
+1. **Complete project context isolation.** Add project IDs to memory and media
+   records, and require project filters in all agent retrieval.
    Chats, Notes, and Documents now have project assignments and their main agent
-   paths filter by project. Other document retrieval, memory, research, uploads,
-   and media paths still need a full isolation audit and project filters.
+   paths filter by project. Chat-originated research now carries a project, but
+   research browsing, standalone research assignment, other document retrieval,
+   memory, uploads, and media still need a full isolation audit and filters.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.
@@ -76,10 +78,11 @@ product experience described later in the roadmap is complete.
    metrics, repeatable model and profile sweeps, and trend charts across runs.
    The current live runner uses plan mode, so effectful tool workflows still
    need isolated disposable fixtures before they can be evaluated safely.
-4. **Automatic action extraction.** Connect email, research, and meeting
-   pipelines to the review queue with verifiable source deep links. Note and
-   document extraction handle explicit task markers; unmarked prose and external
-   sources still need parsers and source verification.
+4. **Automatic action extraction.** Connect email and meeting pipelines to the
+   review queue with verifiable source deep links. Note, document, and saved
+   research report extraction handle explicit task markers; unmarked prose and
+   external sources still need parsers and source verification. Research launched
+   from a project chat now retains that project in its saved report.
 5. **Studio production mode.** Add sourced outline research, schema-validated
    shot expansion, continuity bible, generated stills, batch voiceover,
    multilingual subtitle generation, and background FFmpeg jobs. The current preview uses placeholders

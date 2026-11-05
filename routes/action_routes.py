@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core.database import ActionCandidate, Document, Note, SessionLocal
+from routes.research.research_routes import _find_owned_research_path
 from src.auth_helpers import effective_user, require_chat_api_token_scope
 
 
@@ -65,6 +66,17 @@ def _extract_note_actions(note: Note) -> list[tuple[str, str]]:
         if len(found) >= 20:
             break
     return found
+
+
+def _owned_research_data(session_id: str, owner: str) -> dict | None:
+    path = _find_owned_research_path(session_id, owner)
+    if path is None:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if data.get("owner") == owner else None
 
 
 def _propose_from_source(db, owner: str, source_kind: str, source_ref: str,
@@ -136,6 +148,9 @@ def create_action(request: Request, payload: CandidateInput):
             if db.query(Document).filter(Document.id == source_ref,
                                          Document.owner == owner).first() is None:
                 raise HTTPException(404, "Source document not found")
+        if payload.source_kind == "research" and source_ref:
+            if _owned_research_data(source_ref, owner) is None:
+                raise HTTPException(404, "Source research not found")
         existing = db.query(ActionCandidate).filter(
             ActionCandidate.owner == owner, ActionCandidate.status == "pending",
             ActionCandidate.title == title, ActionCandidate.source_kind == payload.source_kind,
@@ -184,6 +199,24 @@ def propose_actions_from_document(request: Request, document_id: str):
         db.close()
 
 
+@router.post("/from-research/{session_id}", status_code=201)
+def propose_actions_from_research(request: Request, session_id: str):
+    owner = effective_user(request)
+    data = _owned_research_data(session_id, owner)
+    if data is None or data.get("archived"):
+        raise HTTPException(404, "Open source research not found")
+    report = data.get("raw_report") or data.get("result") or ""
+    if not isinstance(report, str):
+        report = ""
+    db = SessionLocal()
+    try:
+        candidates = _extract_marked_actions(report)
+        return {**_propose_from_source(db, owner, "research", session_id, candidates),
+                "source_url": f"/#research-{session_id}"}
+    finally:
+        db.close()
+
+
 @router.post("/{candidate_id}/accept")
 def accept_action(request: Request, candidate_id: str, payload: AcceptInput):
     owner = effective_user(request)
@@ -195,17 +228,21 @@ def accept_action(request: Request, candidate_id: str, payload: AcceptInput):
         note = db.query(Note).filter(Note.id == payload.note_id, Note.owner == owner).first()
         if note is None or note.note_type not in {"checklist", "todo", "goal"} or note.archived:
             raise HTTPException(404, "Open checklist not found")
-        if candidate.source_kind in {"note", "document"}:
+        if candidate.source_kind in {"note", "document", "research"}:
             if candidate.source_kind == "note":
                 source = db.query(Note).filter(Note.id == candidate.source_ref,
                                                Note.owner == owner).first()
-            else:
-                from core.database import Document
+                source_project_id = source.project_id if source else None
+            elif candidate.source_kind == "document":
                 source = db.query(Document).filter(Document.id == candidate.source_ref,
                                                    Document.owner == owner).first()
+                source_project_id = source.project_id if source else None
+            else:
+                source = _owned_research_data(candidate.source_ref, owner)
+                source_project_id = source.get("project_id") if source else None
             if source is None:
                 raise HTTPException(409, "Source record is no longer available")
-            if source.project_id != note.project_id:
+            if source_project_id != note.project_id:
                 raise HTTPException(409, "Source and checklist belong to different projects")
         try:
             items = json.loads(note.items or "[]")
