@@ -22,7 +22,8 @@ product experience described later in the roadmap is complete.
   lines from a note into proposals. Note, document, and saved research report
   proposals link directly to their source. Accepting one into a checklist
   requires the same project. Research launched from a project chat persists
-  that assignment with its report.
+  that assignment with its report. Standalone research can select a project
+  when it starts, and the research library API can filter by project.
 - `/api/projects` provides owner-scoped project metadata and chat assignment.
   `/api/sessions?project_id=<id>` lists a project's conversations. Notes can
   also be assigned to a project; the Notes agent tool reads and writes within
@@ -69,8 +70,8 @@ product experience described later in the roadmap is complete.
    records, and require project filters in all agent retrieval.
    Chats, Notes, and Documents now have project assignments and their main agent
    paths filter by project. Chat-originated research now carries a project, but
-   research browsing, standalone research assignment, other document retrieval,
-   memory, uploads, and media still need a full isolation audit and filters.
+   unfiltered research browsing, other document retrieval, memory, uploads,
+   and media still need a full isolation audit and filters.
 2. **Small-model measurement.** Measure prompt and tool-schema token use, and
    run saved eval cases against each profile. The settings switch and budget
    cap work today; the comparative dashboard remains to build.

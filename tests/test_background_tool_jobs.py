@@ -125,6 +125,8 @@ async def test_research_start_binds_owner_and_uses_quick_chat_default_only(store
     monkeypatch.setattr(research_routes, 'resolve_endpoint', lambda *a, **kw: ('http://model.test', 'test', {}))
     with store() as db:
         db.get(database.Session, 'origin').project_id = 'film'
+        db.add(database.Project(id='film', owner='alice', name='Film'))
+        db.add(database.Project(id='private', owner='bob', name='Private'))
         db.commit()
     started = []
     class ResearchService:
@@ -150,6 +152,18 @@ async def test_research_start_binds_owner_and_uses_quick_chat_default_only(store
         blocked = await client.post('/api/research/start', json={'query': 'fixture', 'origin_chat_id': 'foreign'})
         assert blocked.status_code == 404
         assert len(started) == 1
+        if origin:
+            mismatch = await client.post('/api/research/start', json={
+                'query': 'fixture', 'origin_chat_id': 'origin', 'project_id': 'private'})
+            assert mismatch.status_code == 409
+        else:
+            project = await client.post('/api/research/start', json={
+                'query': 'fixture', 'project_id': 'film'})
+            assert project.status_code == 200
+            assert started[-1]['project_id'] == 'film'
+            foreign_project = await client.post('/api/research/start', json={
+                'query': 'fixture', 'project_id': 'private'})
+            assert foreign_project.status_code == 404
 
 
 @pytest.mark.asyncio

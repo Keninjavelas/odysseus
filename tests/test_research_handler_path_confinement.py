@@ -81,3 +81,17 @@ def test_start_research_rejects_invalid_session_id():
 
     with pytest.raises(ValueError):
         handler.start_research("../escape", "q", "http://localhost", "model")
+
+
+def test_saved_research_retains_project_assignment(tmp_path, monkeypatch):
+    data_dir = tmp_path / "deep_research"
+    data_dir.mkdir()
+    monkeypatch.setattr(research_handler, "RESEARCH_DATA_DIR", data_dir)
+    handler = _handler()
+    handler._save_result("rp-project", {
+        "query": "Research", "status": "done", "result": "TODO: Review source",
+        "started_at": 1, "owner": "alice", "project_id": "film",
+    })
+    saved = json.loads((data_dir / "rp-project.json").read_text(encoding="utf-8"))
+    assert saved["owner"] == "alice"
+    assert saved["project_id"] == "film"

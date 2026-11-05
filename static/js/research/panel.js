@@ -64,6 +64,7 @@ function _saveSettingsToStorage() {
       endpoint_id: document.getElementById('research-endpoint')?.value || '',
       model: document.getElementById('research-model')?.value || '',
       category: document.getElementById('research-category')?.value || '',
+      project_id: document.getElementById('research-project')?.value || '',
     }));
   } catch {}
 }
@@ -306,7 +307,7 @@ export function openPanel(focusJobId) {
   }
 
   _wireEvents(pane);
-  _loadEndpoints().then(_restoreSavedSettings);
+  Promise.all([_loadEndpoints(), _loadResearchProjects()]).then(_restoreSavedSettings);
   _clearBadge();
   _updateResearchCount();
   jobs.refreshLibrary?.({ force: true });
@@ -417,6 +418,10 @@ function _buildPanelHTML() {
               <option value="howto">How-to</option>
               <option value="factcheck">Fact-check</option>
             </select>
+          </label>
+          <label class="research-setting">
+            <span class="research-setting-label">Project</span>
+            <select id="research-project"><option value="">General</option></select>
           </label>
           <label class="research-setting">
             <span class="research-setting-label">Search engine</span>
@@ -629,6 +634,7 @@ function _readSettings() {
     endpoint_id: document.getElementById('research-endpoint')?.value || undefined,
     model: document.getElementById('research-model')?.value || undefined,
     category: category || undefined,
+    project_id: document.getElementById('research-project')?.value || undefined,
   };
   const epSel = document.getElementById('research-endpoint');
   if (epSel && epSel.value) {
@@ -772,6 +778,10 @@ async function _handleStart() {
 
 async function _restoreSavedSettings() {
   const saved = _loadSettingsFromStorage() || {};
+  const project = document.getElementById('research-project');
+  if (project && saved.project_id && Array.from(project.options).some(option => option.value === saved.project_id)) {
+    project.value = saved.project_id;
+  }
   if (saved.category !== undefined) {
     const catSel = document.getElementById('research-category');
     if (catSel) catSel.value = saved.category;
@@ -803,6 +813,20 @@ async function _restoreSavedSettings() {
     }
   }
   _syncAllResearchPickers();
+}
+
+async function _loadResearchProjects() {
+  const select = document.getElementById('research-project');
+  if (!select) return;
+  try {
+    const response = await fetch(`${_apiBase}/api/projects`, { credentials: 'same-origin' });
+    if (!response.ok) return;
+    const projects = await response.json();
+    if (!Array.isArray(projects)) return;
+    select.replaceChildren(new Option('General', ''));
+    for (const project of projects) select.add(new Option(project.name, project.id));
+    _refreshResearchPicker('research-project');
+  } catch (_) { /* Research remains usable without the project list. */ }
 }
 
 async function _loadEndpoints() {
@@ -1474,6 +1498,7 @@ function _setupResearchPickers(pane) {
   const ids = [
     'research-rounds',
     'research-category',
+    'research-project',
     'research-search-provider',
     'research-endpoint',
     'research-model',

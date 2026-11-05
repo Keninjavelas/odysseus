@@ -417,6 +417,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     async def research_library(
         request: Request,
         search: Optional[str] = Query(None),
+        project_id: Optional[str] = Query(None),
         sort: str = Query("recent"),
         limit: int = Query(50),
         archived: bool = Query(False),
@@ -432,6 +433,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                 # JSONs without an `owner` field are hidden — auth was the only
                 # gate before, so every user saw every other user's reports.
                 if d.get("owner") != user:
+                    continue
+                if project_id is not None and d.get("project_id") != project_id:
                     continue
                 # Archived view shows ONLY archived reports; default hides them.
                 if bool(d.get("archived")) != archived:
@@ -453,6 +456,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                     "started_at": d.get("started_at", 0),
                     "completed_at": d.get("completed_at", 0),
                     "archived": bool(d.get("archived")),
+                    "project_id": d.get("project_id"),
                     "thumbnail": _research_thumbnail(d),
                 })
             except Exception:
@@ -532,6 +536,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
     class ResearchStartRequest(BaseModel):
         query: str
         origin_chat_id: Optional[str] = None
+        project_id: Optional[str] = None
         # max_rounds=0 means "Auto" — let the AI decide when to stop, capped at 20.
         max_rounds: int = Field(default=0, ge=0, le=20)
         search_provider: Optional[str] = None
@@ -571,8 +576,18 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                 if origin is None or origin.owner != user:
                     raise HTTPException(404, 'Origin chat not found')
                 project_id = origin.project_id
+                if body.project_id and body.project_id != project_id:
+                    raise HTTPException(409, 'Origin chat belongs to a different project')
             if delivery is None:
                 raise HTTPException(503, 'Background chat delivery is unavailable')
+        elif body.project_id:
+            from core.database import SessionLocal, Project
+            with SessionLocal() as db:
+                project = db.query(Project).filter(
+                    Project.id == body.project_id, Project.owner == user).first()
+                if project is None:
+                    raise HTTPException(404, 'Project not found')
+                project_id = project.id
 
         if body.endpoint_id:
             from src.database import SessionLocal
